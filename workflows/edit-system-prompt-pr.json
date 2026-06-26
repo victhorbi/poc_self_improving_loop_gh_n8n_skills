@@ -1,0 +1,225 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "owner" },
+            { "name": "repo" },
+            { "name": "system_prompt_path" },
+            { "name": "edit_instructions" },
+            { "name": "base_branch" }
+          ]
+        }
+      },
+      "id": "2a000001-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [0, 400],
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/contents/{{ $json.system_prompt_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Accept", "value": "application/vnd.github+json" },
+            { "name": "X-GitHub-Api-Version", "value": "2022-11-28" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2a000002-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Fetch File Metadata",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [240, 400],
+      "typeVersion": 4.4,
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "const fileData = $input.item.json;\nconst trigger = $('Execute Workflow Trigger').item.json;\n\n// GitHub returns base64 with embedded newlines — strip them before decoding\nconst cleanBase64 = (fileData.content || '').replace(/\\n/g, '');\nconst currentContent = Buffer.from(cleanBase64, 'base64').toString('utf8');\n\nreturn [{ json: {\n  currentContent,\n  fileSha: fileData.sha,\n  owner: trigger.owner,\n  repo: trigger.repo,\n  system_prompt_path: trigger.system_prompt_path,\n  edit_instructions: trigger.edit_instructions,\n  base_branch: trigger.base_branch || 'main',\n}}];"
+      },
+      "id": "2a000003-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Decode and Prep",
+      "type": "n8n-nodes-base.code",
+      "position": [480, 400],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are editing an AI agent system prompt. Return ONLY the full updated prompt text — no explanations, no code fences, no preamble.\n\n## Current Prompt\n{{ $json.currentContent }}\n\n## Edit Instructions\n{{ $json.edit_instructions }}"
+      },
+      "id": "2a000004-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Edit Prompt",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "position": [720, 400],
+      "typeVersion": 1.4
+    },
+    {
+      "parameters": {
+        "model": "google/gemini-3-flash-preview",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "id": "2a000005-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "LLM Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "position": [720, 640],
+      "typeVersion": 1,
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "jsCode": "// chainLlm outputs into $json.text (some versions use $json.output)\nconst editedContent = $json.text || $json.output || '';\nconst prev = $('Decode and Prep').item.json;\n\nconst slug = prev.system_prompt_path.split('/').pop().replace(/\\.md$/, '');\nconst ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);\nconst branchName = `chore/edit-${slug}-${ts}`;\nconst commitMessage = `chore: update ${prev.system_prompt_path}`;\nconst prTitle = `Update ${prev.system_prompt_path}`;\n\nconst prBody = [\n  '## Summary',\n  '',\n  `Automated update to \\`${prev.system_prompt_path}\\`.`,\n  '',\n  '## Edit Instructions',\n  '',\n  prev.edit_instructions,\n  '',\n  '## Checklist',\n  '',\n  '- [ ] Reviewed edited content',\n  '- [ ] Tested agent behavior with updated prompt',\n].join('\\n');\n\nconst fileContentBase64 = Buffer.from(editedContent, 'utf8').toString('base64');\n\nreturn [{ json: {\n  owner: prev.owner,\n  repo: prev.repo,\n  system_prompt_path: prev.system_prompt_path,\n  fileSha: prev.fileSha,\n  base_branch: prev.base_branch,\n  branchName,\n  commitMessage,\n  prTitle,\n  prBody,\n  fileContentBase64,\n}}];"
+      },
+      "id": "2a000006-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Build PR Payload",
+      "type": "n8n-nodes-base.code",
+      "position": [960, 400],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "url": "=https://api.github.com/repos/{{ $json.owner }}/{{ $json.repo }}/git/ref/heads/{{ $json.base_branch }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "options": {}
+      },
+      "id": "2a000007-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "GET Base SHA",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1200, 400],
+      "typeVersion": 4.4,
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $('Build PR Payload').item.json.owner }}/{{ $('Build PR Payload').item.json.repo }}/git/refs",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"ref\": \"refs/heads/{{ $('Build PR Payload').item.json.branchName }}\",\n  \"sha\": \"{{ $json.object.sha }}\"\n}",
+        "options": {}
+      },
+      "id": "2a000008-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Create Branch",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1440, 400],
+      "typeVersion": 4.4,
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://api.github.com/repos/{{ $('Build PR Payload').item.json.owner }}/{{ $('Build PR Payload').item.json.repo }}/contents/{{ $('Build PR Payload').item.json.system_prompt_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"message\": \"{{ $('Build PR Payload').item.json.commitMessage }}\",\n  \"content\": \"{{ $('Build PR Payload').item.json.fileContentBase64 }}\",\n  \"branch\": \"{{ $('Build PR Payload').item.json.branchName }}\",\n  \"sha\": \"{{ $('Build PR Payload').item.json.fileSha }}\"\n}",
+        "options": {}
+      },
+      "id": "2a000009-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Commit File",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1680, 400],
+      "typeVersion": 4.4,
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.github.com/repos/{{ $('Build PR Payload').item.json.owner }}/{{ $('Build PR Payload').item.json.repo }}/pulls",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "title", "value": "={{ $('Build PR Payload').item.json.prTitle }}" },
+            { "name": "head",  "value": "={{ $('Build PR Payload').item.json.branchName }}" },
+            { "name": "base",  "value": "={{ $('Build PR Payload').item.json.base_branch }}" },
+            { "name": "body",  "value": "={{ $('Build PR Payload').item.json.prBody }}" },
+            { "name": "draft", "value": "true" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2a00000a-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Open Draft PR",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1920, 400],
+      "typeVersion": 4.4,
+      "credentials": {}
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2a00000b-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              "name": "pr_url",
+              "value": "={{ $json.html_url }}",
+              "type": "string"
+            },
+            {
+              "id": "2a00000b-aaaa-4aaa-8aaa-bbbbbbbbbbbb",
+              "name": "branch",
+              "value": "={{ $('Build PR Payload').item.json.branchName }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2a00000b-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Return",
+      "type": "n8n-nodes-base.set",
+      "position": [2160, 400],
+      "typeVersion": 3.4
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[ { "node": "Fetch File Metadata", "type": "main", "index": 0 } ]]
+    },
+    "Fetch File Metadata": {
+      "main": [[ { "node": "Decode and Prep", "type": "main", "index": 0 } ]]
+    },
+    "Decode and Prep": {
+      "main": [[ { "node": "Edit Prompt", "type": "main", "index": 0 } ]]
+    },
+    "Edit Prompt": {
+      "main": [[ { "node": "Build PR Payload", "type": "main", "index": 0 } ]]
+    },
+    "LLM Model": {
+      "ai_languageModel": [[ { "node": "Edit Prompt", "type": "ai_languageModel", "index": 0 } ]]
+    },
+    "Build PR Payload": {
+      "main": [[ { "node": "GET Base SHA", "type": "main", "index": 0 } ]]
+    },
+    "GET Base SHA": {
+      "main": [[ { "node": "Create Branch", "type": "main", "index": 0 } ]]
+    },
+    "Create Branch": {
+      "main": [[ { "node": "Commit File", "type": "main", "index": 0 } ]]
+    },
+    "Commit File": {
+      "main": [[ { "node": "Open Draft PR", "type": "main", "index": 0 } ]]
+    },
+    "Open Draft PR": {
+      "main": [[ { "node": "Return", "type": "main", "index": 0 } ]]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "edit-system-prompt-pr-subworkflow-v1"
+  }
+}
