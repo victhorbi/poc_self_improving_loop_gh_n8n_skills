@@ -108,7 +108,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge: if file exists pass its SHA for update, else create new file\nconst parsed = $('Parse and Validate').item.json;\nconst shaData = $input.item.json;\n\nconst body = {\n  message: 'chore: update eval set for ' + (parsed.filePath.split('/')[1] || 'agent') + ' (' + parsed.count + ' cases)',\n  content: Buffer.from(parsed.fileContent).toString('base64'),\n  branch: 'main'\n};\n\n// SHA is required when updating an existing file\nif (shaData && shaData.sha) {\n  body.sha = shaData.sha;\n}\n\nreturn [{ json: {\n  commitBody: JSON.stringify(body),\n  owner: parsed.owner,\n  repo: parsed.repo,\n  filePath: parsed.filePath,\n  count: parsed.count\n}}];"
+        "jsCode": "// Merge: if file exists pass its SHA for update, else create new file\nconst parsed = $('Parse and Validate').item.json;\nconst shaData = $input.item.json;\n\nconst body = {\n  message: 'chore: update eval set for ' + (parsed.filePath.split('/')[1] || 'agent') + ' (' + parsed.count + ' cases)',\n  content: Buffer.from(parsed.fileContent).toString('base64'),\n  branch: 'main'\n};\n\n// SHA is required when updating an existing file\nif (shaData && shaData.sha) {\n  body.sha = shaData.sha;\n}\n\nreturn [{ json: {\n  commitBody: body,\n  owner: parsed.owner,\n  repo: parsed.repo,\n  filePath: parsed.filePath,\n  count: parsed.count\n}}];"
       },
       "id": "e1000006-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "name": "Build Commit Body",
@@ -126,7 +126,7 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "githubApi",
         "sendBody": true,
-        "specifyBody": "string",
+        "specifyBody": "json",
         "body": "={{ $json.commitBody }}",
         "sendHeaders": true,
         "headerParameters": {

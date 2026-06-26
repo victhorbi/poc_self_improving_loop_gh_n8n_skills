@@ -115,7 +115,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const data = $input.item.json;\n\nconst body = {\n  message: 'chore: add quality score to system prompt [auto-eval]',\n  content: Buffer.from(data.updatedPrompt).toString('base64'),\n  branch: data.branch,\n  sha: data.promptFileSha\n};\n\nreturn [{ json: {\n  commitBody: JSON.stringify(body),\n  owner: data.owner,\n  repo: data.repo,\n  promptPath: data.promptPath,\n  stats: data.stats,\n  improved: data.improved,\n  pr_number: data.pr_number\n}}];"
+        "jsCode": "const data = $input.item.json;\n\nconst body = {\n  message: 'chore: add quality score to system prompt [auto-eval]',\n  content: Buffer.from(data.updatedPrompt).toString('base64'),\n  branch: data.branch,\n  sha: data.promptFileSha\n};\n\nreturn [{ json: {\n  commitBody: body,\n  owner: data.owner,\n  repo: data.repo,\n  promptPath: data.promptPath,\n  stats: data.stats,\n  improved: data.improved,\n  pr_number: data.pr_number\n}}];"
       },
       "id": "e3000005-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "name": "Build Commit Body",
@@ -133,7 +133,7 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "githubApi",
         "sendBody": true,
-        "specifyBody": "string",
+        "specifyBody": "json",
         "body": "={{ $json.commitBody }}",
         "sendHeaders": true,
         "headerParameters": {
