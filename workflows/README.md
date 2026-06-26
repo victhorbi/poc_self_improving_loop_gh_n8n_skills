@@ -208,6 +208,8 @@ Runs the full eval suite against the system prompt on a PR branch, prepends a qu
 | `pr_number` | number | — | PR number (from `Open Draft PR` node response) |
 | `system_prompt_path` | string | `agents/akinator/system-prompt.md` | Path to the system prompt file |
 | `max_iterations` | number | `40` | Per-game iteration limit |
+| `min_success_rate` | number | `50` | Floor threshold used on first run (no baseline yet) |
+| `max_avg_iterations` | number | `30` | Ceiling threshold used on first run (no baseline yet) |
 
 **Outputs:**
 ```json
@@ -220,9 +222,12 @@ Runs the full eval suite against the system prompt on a PR branch, prepends a qu
     "avg_iterations": 11.4,
     "total_tokens": 2415000,
     "tokens_per_game": 48300,
-    "evaluated_at": "2025-01-15T14:30:00.000Z"
+    "evaluated_at": "2025-01-15T14:30:00.000Z",
+    "first_run": false,
+    "thresholds_used": null
   },
   "improved": true,
+  "first_run": false,
   "pr_ready": true,
   "pr_url": "https://github.com/victhorbi/test_n8n_skills/pull/3"
 }
@@ -233,24 +238,33 @@ Runs the full eval suite against the system prompt on a PR branch, prepends a qu
 2. Strips any existing quality header from the prompt so it doesn't affect game behavior
 3. Runs every eval case through the full game simulation loop (same logic as `run-single-eval`)
 4. Computes aggregate stats: `success_rate`, `avg_iterations`, `tokens_per_game`
-5. Compares to the baseline embedded in the current quality header (if any)
+5. Compares to the baseline — with two different paths depending on whether a prior score exists:
 6. Prepends the new quality score block to the system prompt:
    ```
    <!-- QUALITY_SCORE
-   { "model": "...", "success_rate": 82.0, "avg_iterations": 11.4, ... }
+   { "model": "...", "success_rate": 82.0, "avg_iterations": 11.4, "first_run": false, ... }
    -->
-   
+
    You are an Akinator-style game agent...
    ```
 7. Commits the updated prompt to the PR branch
-8. If **both** `success_rate` improved **and** `avg_iterations` decreased → removes draft status from the PR
+8. If `improved = true` → removes draft status from the PR
 
-**Quality improvement logic:**
+**Quality improvement logic — two cases:**
+
+*No prior score (first run — `first_run: true`):*
+```
+improved = (success_rate >= min_success_rate)   ← default 50%
+        AND (avg_iterations <= max_avg_iterations)  ← default 30
+```
+The thresholds used are recorded in the header under `thresholds_used` so you can see what bar was applied.
+
+*Subsequent runs (baseline exists — `first_run: false`):*
 ```
 improved = (new_success_rate > baseline_success_rate)
         AND (new_avg_iterations < baseline_avg_iterations)
 ```
-A regression on either metric keeps the PR as draft.
+Both metrics must strictly improve. A regression on either keeps the PR as draft.
 
 **Environment variables required** (same as `run-single-eval`):
 | Variable | Description |
