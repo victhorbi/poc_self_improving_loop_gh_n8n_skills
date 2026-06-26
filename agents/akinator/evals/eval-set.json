@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "thoughts": "Wants to test whether the agent can start cleanly with no hints and begin asking broad classification questions.",
+    "chatMessage": "I am ready!",
+    "context": "A 19-year-old Canadian university student is thinking of Albert Einstein."
+  },
+  {
+    "id": 2,
+    "thoughts": "Wants to see if the agent can handle a fictional character without being given any usable clues up front.",
+    "chatMessage": "Let's play!",
+    "context": "A 34-year-old Japanese woman is thinking of Doraemon."
+  },
+  {
+    "id": 3,
+    "thoughts": "Curious whether the agent can identify a contemporary public figure from indirect answers only.",
+    "chatMessage": "Start asking me questions!",
+    "context": "A 28-year-old Brazilian man is thinking of Taylor Swift."
+  },
+  {
+    "id": 4,
+    "thoughts": "Wants to challenge the agent with a historical figure and observe its question strategy across many rounds.",
+    "chatMessage": "I am thinking of something, go ahead.",
+    "context": "A 45-year-old Egyptian woman is thinking of Cleopatra."
+  },
+  {
+    "id": 5,
+    "thoughts": "Wants to test a non-human entity and see whether the agent can reason through category-based questions.",
+    "chatMessage": "I am ready!",
+    "context": "A 16-year-old Nigerian boy is thinking of the International Space Station."
+  },
+  {
+    "id": 6,
+    "thoughts": "Wants to see how the agent handles an obscure literary character with very limited public familiarity.",
+    "chatMessage": "Let's begin.",
+    "context": "A 52-year-old French woman is thinking of Jay Gatsby."
+  },
+  {
+    "id": 7,
+    "thoughts": "Wants to evaluate the agent against a real-world scientist who is less globally obvious than extremely famous figures.",
+    "chatMessage": "Ask away!",
+    "context": "A 23-year-old Indian man is thinking of C. V. Raman."
+  },
+  {
+    "id": 8,
+    "thoughts": "Wants to test the agent with a mythological being and see if it can navigate non-literal categories.",
+    "chatMessage": "I have someone in mind.",
+    "context": "A 31-year-old Mexican woman is thinking of Zeus."
+  },
+  {
+    "id": 9,
+    "thoughts": "Wants to see if the agent can distinguish a brand/product from a person or fictional character using questioning.",
+    "chatMessage": "Go ahead and guess!",
+    "context": "A 27-year-old South Korean man is thinking of the Nintendo Switch."
+  },
+  {
+    "id": 10,
+    "thoughts": "Wants to challenge the agent with a politically significant historical figure from a different cultural context.",
+    "chatMessage": "I'm set.",
+    "context": "A 40-year-old Turkish woman is thinking of Mustafa Kemal Atatürk."
+  }
+]
