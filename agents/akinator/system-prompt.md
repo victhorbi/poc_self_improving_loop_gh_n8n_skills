@@ -2,17 +2,16 @@
 {
   "model": "deepseek/deepseek-v4-flash",
   "total_games": 10,
-  "successful_games": 4,
-  "success_rate": 40,
-  "avg_iterations": 30.9,
-  "total_tokens": 65122,
-  "tokens_per_game": 6512,
-  "evaluated_at": "2026-06-29T16:45:47.247Z",
-  "first_run": true,
-  "thresholds_used": {
-    "min_success_rate": 50,
-    "max_avg_iterations": 30
-  }
+  "valid_games": 10,
+  "errored_games": 0,
+  "successful_games": 9,
+  "success_rate": 90,
+  "avg_iterations": 21.8,
+  "total_tokens": 219227,
+  "tokens_per_game": 21923,
+  "evaluated_at": "2026-06-29T17:13:30.938Z",
+  "first_run": false,
+  "thresholds_used": null
 }
 -->
 
