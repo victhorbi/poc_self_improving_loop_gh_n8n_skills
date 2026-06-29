@@ -102,27 +102,13 @@
     },
     {
       "parameters": {
-        "jsCode": "// =============================================================================\n// Eval Runner + Stats Aggregator\n//\n// 1. Decodes eval set and system prompt from GitHub API response\n// 2. Runs every eval case against the Akinator (game loop per case)\n// 3. Computes quality stats\n// 4. Extracts any existing quality baseline from the system prompt header\n// 5. Builds updated system prompt with new quality score prepended\n//\n// Requires env var: OPENROUTER_API_KEY\n// Optional env var: EVAL_MODEL\n// =============================================================================\n\nconst trigger = $('Execute Workflow Trigger').first().json;\nconst evalFileData = $('Fetch Eval Set').first().json;\nconst promptFileData = $('Fetch System Prompt').first().json;\n\n// --- Decode eval set ---\nconst evalB64 = (evalFileData.content || '').replace(/\\n/g, '');\nconst evalJson = Buffer.from(evalB64, 'base64').toString('utf8');\nlet evals;\ntry { evals = JSON.parse(evalJson); } catch(e) { throw new Error('Could not parse eval set: ' + e.message); }\n\n// --- Decode system prompt ---\nconst promptB64 = (promptFileData.content || '').replace(/\\n/g, '');\nconst currentPrompt = Buffer.from(promptB64, 'base64').toString('utf8');\nconst promptFileSha = promptFileData.sha;\nconst promptPath = trigger.system_prompt_path || 'agents/akinator/system-prompt.md';\n\n// Strip any existing quality header so we run against the clean prompt\nconst cleanPrompt = currentPrompt.replace(/<!--\\s*QUALITY_SCORE[\\s\\S]*?-->\\s*\\n*/g, '').trim();\n\n// --- Extract baseline stats from existing header (if any) ---\nlet baseline = null;\nconst headerMatch = currentPrompt.match(/<!--\\s*QUALITY_SCORE([\\s\\S]*?)-->/);\nif (headerMatch) {\n  try { baseline = JSON.parse(headerMatch[1].trim()); } catch(e) { /* non-fatal */ }\n}\n\n// --- Game simulation ---\nconst model = $env.EVAL_MODEL || 'google/gemini-2.5-flash-preview';\nconst apiKey = $env.OPENROUTER_API_KEY;\nif (!apiKey) throw new Error('OPENROUTER_API_KEY is not set in n8n environment variables');\n\nconst maxIter = trigger.max_iterations || 40;\nconst BASE_URL = 'https://openrouter.ai/api/v1/chat/completions';\n\nconst callLLM = async (messages, sysOverride) => {\n  const payload = {\n    model: model,\n    temperature: 0.1,\n    messages: sysOverride\n      ? [{ role: 'system', content: sysOverride }].concat(messages)\n      : messages\n  };\n  const res = await this.helpers.httpRequest({\n    method: 'POST',\n    url: BASE_URL,\n    headers: {\n      'Authorization': 'Bearer ' + apiKey,\n      'Content-Type': 'application/json'\n    },\n    body: JSON.stringify(payload)\n  });\n  return {\n    text: res.choices[0].message.content.trim(),\n    tokens: (res.usage || {}).total_tokens || 0\n  };\n};\n\nconst runGame = async (evalCase) => {\n  const userSim = [\n    'You are roleplaying as a user in a guessing game. Your scenario: ' + evalCase.context + '.',\n    'Your mindset going into the game: ' + evalCase.thoughts,\n    '',\n    'Rules:',\n    '- Answer every question from the host with ONLY one of: Yes / No / Unknown / Probably / Probably not',\n    '- Use your knowledge of the character described in your scenario to answer accurately',\n    '- If the host makes a direct guess naming a character, reply Yes only if that is the character in your scenario, otherwise No',\n    '- Never reveal the character name or any identifying detail unprompted \\u2014 only confirm or deny explicit guesses'\n  ].join('\\n');\n\n  const hist = [\n    { role: 'system', content: cleanPrompt },\n    { role: 'user', content: evalCase.chatMessage }\n  ];\n  let iter = 0, success = false, tokens = 0;\n\n  while (iter < maxIter) {\n    const akResp = await callLLM(hist);\n    tokens += akResp.tokens;\n    hist.push({ role: 'assistant', content: akResp.text });\n    iter++;\n\n    const isGuess = /is your character|are you thinking of|i think it.s|i believe it.*is|my answer is|i have reached/i.test(akResp.text);\n\n    const userResp = await callLLM(\n      [{ role: 'user', content: akResp.text }],\n      userSim\n    );\n    tokens += userResp.tokens;\n    hist.push({ role: 'user', content: userResp.text });\n\n    if (isGuess && userResp.text.trim().toLowerCase().startsWith('yes')) {\n      success = true;\n      break;\n    }\n  }\n  return { character: evalCase.character, iterations: iter, success: success, tokens_used: tokens };\n};\n\n// Run all evals sequentially\nconst results = [];\nfor (const evalCase of evals) {\n  const r = await runGame(evalCase);\n  results.push(r);\n}\n\n// --- Aggregate stats ---\nconst successes = results.filter(function(r) { return r.success; });\nconst successRate = Math.round((successes.length / results.length) * 1000) / 10;\nconst avgIter = Math.round(results.reduce(function(s, r) { return s + r.iterations; }, 0) / results.length * 10) / 10;\nconst totalTokens = results.reduce(function(s, r) { return s + r.tokens_used; }, 0);\nconst tokensPerGame = Math.round(totalTokens / results.length);\nconst evaluatedAt = new Date().toISOString();\n\nconst newStats = {\n  model: model,\n  total_games: results.length,\n  successful_games: successes.length,\n  success_rate: successRate,\n  avg_iterations: avgIter,\n  total_tokens: totalTokens,\n  tokens_per_game: tokensPerGame,\n  evaluated_at: evaluatedAt\n};\n\n// --- Quality comparison ---\n// When no baseline exists (first run) we fall back to minimum acceptable\n// thresholds rather than failing silently. Callers can override the defaults\n// by passing min_success_rate and max_avg_iterations as trigger inputs.\nconst minRate = trigger.min_success_rate !== undefined ? parseFloat(trigger.min_success_rate) : 50;\nconst maxIters = trigger.max_avg_iterations !== undefined ? parseFloat(trigger.max_avg_iterations) : 30;\n\nconst firstRun = !baseline;\nlet improved = false;\n\nif (firstRun) {\n  // No prior score to compare against. Promote if score clears the floor thresholds.\n  improved = successRate >= minRate && avgIter <= maxIters;\n} else {\n  // Subsequent runs: both metrics must strictly improve vs the recorded baseline.\n  const oldRate = parseFloat(baseline.success_rate || 0);\n  const oldIter = parseFloat(baseline.avg_iterations || 999);\n  improved = successRate > oldRate && avgIter < oldIter;\n}\n\nnewStats.first_run = firstRun;\nnewStats.thresholds_used = firstRun ? { min_success_rate: minRate, max_avg_iterations: maxIters } : null;\n\n// --- Build updated system prompt with quality header ---\nconst qualityHeader = '<!-- QUALITY_SCORE\\n' + JSON.stringify(newStats, null, 2) + '\\n-->\\n\\n';\nconst updatedPrompt = qualityHeader + cleanPrompt;\n\nreturn [{ json: {\n  results: results,\n  stats: newStats,\n  baseline: baseline,\n  first_run: firstRun,\n  improved: improved,\n  updatedPrompt: updatedPrompt,\n  promptFileSha: promptFileSha,\n  promptPath: promptPath,\n  owner: trigger.owner,\n  repo: trigger.repo,\n  branch: trigger.branch,\n  pr_number: trigger.pr_number\n}}];",
-        "mode": "runOnceForAllItems"
-      },
-      "id": "e3000004-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      "name": "Run All Evals + Build Report",
-      "type": "n8n-nodes-base.code",
-      "position": [
-        480,
-        400
-      ],
-      "typeVersion": 2
-    },
-    {
-      "parameters": {
         "jsCode": "const data = $input.item.json;\n\nconst body = {\n  message: 'chore: add quality score to system prompt [auto-eval]',\n  content: Buffer.from(data.updatedPrompt).toString('base64'),\n  branch: data.branch,\n  sha: data.promptFileSha\n};\n\nreturn [{ json: {\n  commitBody: body,\n  owner: data.owner,\n  repo: data.repo,\n  promptPath: data.promptPath,\n  stats: data.stats,\n  improved: data.improved,\n  pr_number: data.pr_number\n}}];"
       },
       "id": "e3000005-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       "name": "Build Commit Body",
       "type": "n8n-nodes-base.code",
       "position": [
-        720,
+        1200,
         400
       ],
       "typeVersion": 2
@@ -159,7 +145,7 @@
       "name": "Commit Quality Report",
       "type": "n8n-nodes-base.httpRequest",
       "position": [
-        960,
+        1440,
         400
       ],
       "typeVersion": 4.4,
@@ -201,7 +187,7 @@
       "name": "Quality Improved?",
       "type": "n8n-nodes-base.if",
       "position": [
-        1200,
+        1680,
         400
       ],
       "typeVersion": 2.2
@@ -234,7 +220,7 @@
       "name": "Mark PR Ready",
       "type": "n8n-nodes-base.httpRequest",
       "position": [
-        1440,
+        1920,
         280
       ],
       "typeVersion": 4.4,
@@ -276,10 +262,51 @@
       "name": "Return",
       "type": "n8n-nodes-base.set",
       "position": [
-        1680,
+        2160,
         400
       ],
       "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Decode eval set + system prompt, extract baseline, emit one item per eval case.\n// Each item carries the shared metadata so the game node and aggregator can read it.\nconst trigger = $('Execute Workflow Trigger').first().json;\nconst evalFileData = $('Fetch Eval Set').first().json;\nconst promptFileData = $('Fetch System Prompt').first().json;\n\nconst evalB64 = (evalFileData.content || '').replace(/\\n/g, '');\nlet evals;\ntry {\n  evals = JSON.parse(Buffer.from(evalB64, 'base64').toString('utf8'));\n} catch(e) { throw new Error('Could not parse eval set: ' + e.message); }\n\nconst promptB64 = (promptFileData.content || '').replace(/\\n/g, '');\nconst currentPrompt = Buffer.from(promptB64, 'base64').toString('utf8');\nconst promptFileSha = promptFileData.sha;\n\nlet baseline = null;\nconst headerMatch = currentPrompt.match(/<!--\\s*QUALITY_SCORE([\\s\\S]*?)-->/);\nif (headerMatch) {\n  try { baseline = JSON.parse(headerMatch[1].trim()); } catch(e) {}\n}\nconst cleanPrompt = currentPrompt.replace(/<!--\\s*QUALITY_SCORE[\\s\\S]*?-->\\s*\\n*/g, '').trim();\n\nconst shared = {\n  cleanPrompt:       cleanPrompt,\n  baseline:          baseline,\n  branch:            trigger.branch,\n  owner:             trigger.owner,\n  repo:              trigger.repo,\n  pr_number:         trigger.pr_number,\n  max_iterations:    trigger.max_iterations || 40,\n  prompt_path:       trigger.system_prompt_path || 'agents/akinator/system-prompt.md',\n  promptFileSha:     promptFileSha,\n  min_success_rate:  trigger.min_success_rate  !== undefined ? parseFloat(trigger.min_success_rate)  : 50,\n  max_avg_iterations: trigger.max_avg_iterations !== undefined ? parseFloat(trigger.max_avg_iterations) : 30\n};\n\n// One item per eval case \u2014 all carrying the shared metadata\nreturn evals.map(function(evalCase) {\n  return { json: Object.assign({}, evalCase, shared) };\n});"
+      },
+      "id": "e3000001-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Decode & Prepare",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        480,
+        400
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Run ONE complete game for the current eval case item.\n// n8n executes this once per item (one eval case = one Code node run).\n// ~5-15 API calls per game \u2014 well under the 60 s timeout.\nconst item = $input.item.json;\nconst model = $env.EVAL_MODEL || 'google/gemini-2.5-flash-preview';\nconst apiKey = $env.OPENROUTER_API_KEY;\nif (!apiKey) throw new Error('OPENROUTER_API_KEY is not set in n8n environment variables');\n\nconst BASE_URL = 'https://openrouter.ai/api/v1/chat/completions';\nconst callLLM = async (messages, sys) => {\n  const res = await this.helpers.httpRequest({\n    method: 'POST', url: BASE_URL,\n    headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },\n    body: JSON.stringify({\n      model: model, temperature: 0.1,\n      messages: sys ? [{ role: 'system', content: sys }].concat(messages) : messages\n    })\n  });\n  return { text: res.choices[0].message.content.trim(), tokens: (res.usage || {}).total_tokens || 0 };\n};\n\nconst userSim = [\n  'You are roleplaying as a user in a guessing game. Your scenario: ' + item.context + '.',\n  'Your mindset going into the game: ' + item.thoughts,\n  '',\n  'Rules:',\n  '- Answer every question from the host with ONLY one of: Yes / No / Unknown / Probably / Probably not',\n  '- Use your knowledge of the character described in your scenario to answer accurately',\n  '- If the host makes a direct guess naming a character, reply Yes only if that is the character in your scenario, otherwise No',\n  '- Never reveal the character name or any identifying detail unprompted \\u2014 only confirm or deny explicit guesses'\n].join('\\n');\n\nconst hist = [\n  { role: 'system', content: item.cleanPrompt },\n  { role: 'user',   content: item.chatMessage }\n];\nlet iter = 0, success = false, tokens = 0;\nconst maxIter = item.max_iterations || 40;\n\nwhile (iter < maxIter) {\n  const akResp = await callLLM(hist);\n  tokens += akResp.tokens;\n  hist.push({ role: 'assistant', content: akResp.text });\n  iter++;\n\n  const isGuess = /is your character|are you thinking of|i think it.s|i believe it.*is|my answer is|i have reached/i.test(akResp.text);\n\n  const userResp = await callLLM([{ role: 'user', content: akResp.text }], userSim);\n  tokens += userResp.tokens;\n  hist.push({ role: 'user', content: userResp.text });\n\n  if (isGuess && userResp.text.trim().toLowerCase().startsWith('yes')) { success = true; break; }\n}\n\n// Game result + pass-through shared metadata for the aggregation step\nreturn [{ json: {\n  iterations: iter, success: success, model: model, tokens_used: tokens,\n  baseline:          item.baseline,\n  cleanPrompt:       item.cleanPrompt,\n  branch:            item.branch,\n  owner:             item.owner,\n  repo:              item.repo,\n  pr_number:         item.pr_number,\n  prompt_path:       item.prompt_path,\n  promptFileSha:     item.promptFileSha,\n  min_success_rate:  item.min_success_rate,\n  max_avg_iterations: item.max_avg_iterations\n}}];"
+      },
+      "id": "e3000002-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Run Single Game",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        720,
+        400
+      ],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Aggregate all per-game results, compare vs baseline, build updated system prompt.\nconst all = $input.all();\nif (!all || all.length === 0) throw new Error('No eval results to aggregate');\n\nconst meta    = all[0].json;\nconst baseline = meta.baseline;\nconst cleanPrompt = meta.cleanPrompt;\nconst minRate  = parseFloat(meta.min_success_rate  || 50);\nconst maxIters = parseFloat(meta.max_avg_iterations || 30);\n\nconst results = all.map(function(it) {\n  return { iterations: it.json.iterations, success: it.json.success,\n           model: it.json.model, tokens_used: it.json.tokens_used };\n});\n\nconst successes    = results.filter(function(r) { return r.success; });\nconst successRate  = Math.round((successes.length / results.length) * 1000) / 10;\nconst avgIter      = Math.round(results.reduce(function(s,r) { return s+r.iterations; }, 0) / results.length * 10) / 10;\nconst totalTokens  = results.reduce(function(s,r) { return s+r.tokens_used; }, 0);\nconst tokensPerGame = Math.round(totalTokens / results.length);\n\nconst newStats = {\n  model:            meta.model || results[0].model,\n  total_games:      results.length,\n  successful_games: successes.length,\n  success_rate:     successRate,\n  avg_iterations:   avgIter,\n  total_tokens:     totalTokens,\n  tokens_per_game:  tokensPerGame,\n  evaluated_at:     new Date().toISOString()\n};\n\nconst firstRun = !baseline;\nlet improved = false;\nif (firstRun) {\n  improved = successRate >= minRate && avgIter <= maxIters;\n} else {\n  improved = successRate > parseFloat(baseline.success_rate || 0)\n          && avgIter    < parseFloat(baseline.avg_iterations || 999);\n}\nnewStats.first_run       = firstRun;\nnewStats.thresholds_used = firstRun ? { min_success_rate: minRate, max_avg_iterations: maxIters } : null;\n\nconst updatedPrompt = '<!-- QUALITY_SCORE\\n' + JSON.stringify(newStats, null, 2) + '\\n-->\\n\\n' + cleanPrompt;\n\nreturn [{ json: {\n  results:      results,\n  stats:        newStats,\n  baseline:     baseline,\n  first_run:    firstRun,\n  improved:     improved,\n  updatedPrompt: updatedPrompt,\n  promptFileSha: meta.promptFileSha,\n  promptPath:    meta.prompt_path,\n  owner:         meta.owner,\n  repo:          meta.repo,\n  branch:        meta.branch,\n  pr_number:     meta.pr_number\n}}];"
+      },
+      "id": "e3000003-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Aggregate & Build Report",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        960,
+        400
+      ],
+      "typeVersion": 2
     }
   ],
   "connections": {
@@ -303,7 +330,7 @@
       "main": [
         [
           {
-            "node": "Run All Evals + Build Report",
+            "node": "Decode & Prepare",
             "type": "main",
             "index": 0
           }
@@ -314,18 +341,7 @@
       "main": [
         [
           {
-            "node": "Run All Evals + Build Report",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Run All Evals + Build Report": {
-      "main": [
-        [
-          {
-            "node": "Build Commit Body",
+            "node": "Decode & Prepare",
             "type": "main",
             "index": 0
           }
@@ -377,6 +393,39 @@
         [
           {
             "node": "Return",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode & Prepare": {
+      "main": [
+        [
+          {
+            "node": "Run Single Game",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Single Game": {
+      "main": [
+        [
+          {
+            "node": "Aggregate & Build Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate & Build Report": {
+      "main": [
+        [
+          {
+            "node": "Build Commit Body",
             "type": "main",
             "index": 0
           }
