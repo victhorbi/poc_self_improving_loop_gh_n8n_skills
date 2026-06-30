@@ -29,7 +29,7 @@ Skill files to fetch on startup:
 - skills/knowledge-base-resolver.md
 
 ## Available Skills Files and Directories
-{{ 
+{{
 JSON.stringify(
   $('Merge Directory Structures')
     .all()
