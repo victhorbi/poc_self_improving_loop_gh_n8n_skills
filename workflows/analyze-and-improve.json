@@ -339,7 +339,8 @@
       "parameters": {
         "path": "analyze-and-improve",
         "responseMode": "onReceived",
-        "options": {}
+        "options": {},
+        "httpMethod": "POST"
       },
       "id": "webhook-auto-trigger-001",
       "name": "Webhook Trigger",
