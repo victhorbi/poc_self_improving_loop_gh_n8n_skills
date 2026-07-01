@@ -175,8 +175,13 @@ jobs:
           set -euo pipefail
           result_line=$(grep '^EVAL_RESULT_JSON ' /tmp/eval-out.txt 2>/dev/null | tail -1 || echo "")
           if [ -z "$result_line" ]; then
-            verdict="❌ eval did not complete"
-            detail="Check the [run logs](${RUN_URL}) for errors."
+            if grep -qF 'Waiting for generate-eval-set workflow' /tmp/eval-out.txt 2>/dev/null; then
+              verdict="⏳ eval set not yet available"
+              detail="The eval set hasn't been generated yet — \`generate-eval-set.yml\` will create it automatically. Re-run this workflow once the eval set is committed."
+            else
+              verdict="❌ eval did not complete"
+              detail="Check the [run logs](${RUN_URL}) for errors."
+            fi
           else
             result_json="${result_line#EVAL_RESULT_JSON }"
             improved=$(echo "$result_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print('true' if d.get('improved') else 'false')")
