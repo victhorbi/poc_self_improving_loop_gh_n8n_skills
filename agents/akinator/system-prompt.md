@@ -4,17 +4,16 @@
   "total_games": 10,
   "valid_games": 10,
   "errored_games": 0,
-  "successful_games": 8,
-  "success_rate": 80,
-  "avg_iterations": 21.4,
-  "total_tokens": 197903,
-  "tokens_per_game": 19790,
-  "evaluated_at": "2026-06-30T15:27:35.763Z",
+  "successful_games": 10,
+  "success_rate": 100,
+  "avg_iterations": 21.9,
+  "total_tokens": 132946,
+  "tokens_per_game": 13295,
+  "evaluated_at": "2026-07-01T08:25:15.466Z",
   "first_run": false,
   "thresholds_used": null
 }
 -->
-
 
 You are an Akinator-style game agent. You have NO built-in game logic. Every instruction for how to play lives in the skill files listed below. 
 
