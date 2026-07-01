@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "agents/*/system-prompt.md"
-      - "skills/**"
+      - "agents/*/skills/**"
   workflow_dispatch:
     inputs:
       agent_name:
@@ -56,7 +56,7 @@ jobs:
             matrix=$(python3 -c "import json,sys,os; name=os.environ['DISPATCH_NAME'].strip(); print(json.dumps([f'agents/{name}']))")
           else
             changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" || true)
-            matrix=$(printf '%s' "$changed" | python3 -c "import sys,json,re,os;changed=[l.strip() for l in sys.stdin if l.strip()];dirs={m.group(1) for l in changed for m in [re.match(r'^(agents/[^/]+)/',l)] if m};skills_changed=any(re.match(r'^skills/',l) for l in changed);all_agents={f'agents/{d}' for d in os.listdir('agents') if os.path.isdir(f'agents/{d}')} if skills_changed else set();print(json.dumps(sorted(dirs|all_agents)))")
+            matrix=$(printf '%s' "$changed" | python3 -c "import sys,json,re;changed=[l.strip() for l in sys.stdin if l.strip()];dirs={m.group(1) for l in changed for m in [re.match(r'^(agents/[^/]+)/',l)] if m};print(json.dumps(sorted(dirs)))")
           fi
           count=$(printf '%s' "$matrix" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"

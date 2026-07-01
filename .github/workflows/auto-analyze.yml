@@ -60,13 +60,14 @@ jobs:
             exit 0
           fi
 
-          # Discover skill paths (comma-separated list of skills/*.md, excluding README)
-          skills=$(git ls-files 'skills/*.md' | grep -vi 'readme' | paste -sd ',' - || true)
-
           fire() {
             local agent_folder="$1"
             local max_logs="$2"
             local system_prompt_path="${agent_folder}/system-prompt.md"
+
+            # Discover skill paths for this specific agent
+            local skills
+            skills=$(git ls-files "${agent_folder}/skills/*.md" | grep -vi 'readme' | paste -sd ',' - || true)
 
             payload=$(jq -n \
               --arg owner               "$OWNER" \

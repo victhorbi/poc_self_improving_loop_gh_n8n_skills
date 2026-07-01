@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "agents/**/system-prompt.md"
-      - "skills/**"
+      - "agents/*/skills/**"
 
 permissions:
   contents: write
@@ -34,12 +34,10 @@ jobs:
           echo "$changed"
 
           affected=$(printf '%s' "$changed" | python3 -c "
-          import sys, json, re, os
+          import sys, re
           changed = [l.strip() for l in sys.stdin if l.strip()]
           dirs = {m.group(1) for l in changed for m in [re.match(r'^(agents/[^/]+)/', l)] if m}
-          skills_changed = any(re.match(r'^skills/', l) for l in changed)
-          all_agents = {f'agents/{d}' for d in os.listdir('agents') if os.path.isdir(f'agents/{d}')} if skills_changed else set()
-          print('\n'.join(sorted(dirs | all_agents)))
+          print('\n'.join(sorted(dirs)))
           ")
 
           if [ -z "$affected" ]; then

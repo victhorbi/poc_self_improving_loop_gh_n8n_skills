@@ -16,7 +16,7 @@
         "promptType": "define",
         "text": "={{ $('When chat message received').item.json.chatInput }}",
         "options": {
-          "systemMessage": "=You are an Akinator-style game agent. You have NO built-in game logic. Every instruction for how to play lives in the skill files listed below.\n\n## MANDATORY — Do this before every single response\n1. Use Get a File From GitHub to fetch ALL four skill files concurrently (one tool call per file, all at once)\n2. Read the fetched content\n3. Only then respond, following those instructions exactly\n\nSkill files to fetch on startup (repoOwnerUsername: victhorbi, repoName: test_n8n_skills):\n- skills/candidate-state-manager.md\n- skills/entropy-calculator.md\n- skills/confidence-threshold-check.md\n- skills/knowledge-base-resolver.md\n\n## Available Skills Files and Directories\n{{ \nJSON.stringify(\n  $('Merge Directory Structures')\n    .all()\n    .map(item => ({\n      \"type\": item.json.type,\n      \"path\": item.json.path,\n      \"orgName\": item.json.url.split('/')[4],\n      \"repoName\": item.json.url.split('/')[5],\n    }))\n    .filter(i => \n      i.path.toLowerCase().split('/').last() !== \"readme.md\" && \n      i.path.toLowerCase().split('/').last() !== \"template\" &&\n      i.path.toLowerCase().split('/').last() !== \"license\"\n    ),\n  null,\n  2\n) \n}}\n\n## Absolute Rules\n- NEVER play the game without fetching the skill files first\n- NEVER answer from general knowledge — your instructions are only in the skill files\n- If a tool call fails, tell the user explicitly: \"Tool call failed: [error]\" — do not fail silently",
+          "systemMessage": "=You are an Akinator-style game agent. You have NO built-in game logic. Every instruction for how to play lives in the skill files listed below.\n\n## MANDATORY — Do this before every single response\n1. Use Get a File From GitHub to fetch ALL four skill files concurrently (one tool call per file, all at once)\n2. Read the fetched content\n3. Only then respond, following those instructions exactly\n\nSkill files to fetch on startup (repoOwnerUsername: victhorbi, repoName: test_n8n_skills):\n- agents/akinator/skills/candidate-state-manager.md\n- agents/akinator/skills/entropy-calculator.md\n- agents/akinator/skills/confidence-threshold-check.md\n- agents/akinator/skills/knowledge-base-resolver.md\n\n## Available Skills Files and Directories\n{{ \nJSON.stringify(\n  $('Merge Directory Structures')\n    .all()\n    .map(item => ({\n      \"type\": item.json.type,\n      \"path\": item.json.path,\n      \"orgName\": item.json.url.split('/')[4],\n      \"repoName\": item.json.url.split('/')[5],\n    }))\n    .filter(i => \n      i.path.toLowerCase().split('/').last() !== \"readme.md\" && \n      i.path.toLowerCase().split('/').last() !== \"template\" &&\n      i.path.toLowerCase().split('/').last() !== \"license\"\n    ),\n  null,\n  2\n) \n}}\n\n## Absolute Rules\n- NEVER play the game without fetching the skill files first\n- NEVER answer from general knowledge — your instructions are only in the skill files\n- If a tool call fails, tell the user explicitly: \"Tool call failed: [error]\" — do not fail silently",
           "maxIterations": 150
         }
       },
@@ -118,7 +118,7 @@
           "mode": "url",
           "value": "={{ $json.SKILLS_REPOS }}"
         },
-        "filePath": "/skills"
+        "filePath": "/agents/akinator/skills"
       },
       "id": "1a2b3c4d-0008-4aaa-8aaa-aaaaaaaaaaaa",
       "name": "List Skills Dirs",
