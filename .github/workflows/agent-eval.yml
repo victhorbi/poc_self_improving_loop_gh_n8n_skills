@@ -22,7 +22,7 @@ on:
       concurrency:
         description: "Number of eval games to run in parallel"
         required: false
-        default: "1"
+        default: "5"
 
 # Least privilege: write only what the eval needs (commit score + mark PR ready).
 permissions:
