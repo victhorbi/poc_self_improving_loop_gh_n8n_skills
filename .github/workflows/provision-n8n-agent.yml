@@ -9,6 +9,7 @@ name: Provision n8n Agent Workflow
 # Required secrets:
 #   N8N_API_URL  — n8n instance base URL, e.g. https://my-n8n.example.com
 #   N8N_API_KEY  — n8n API key (Settings → n8n API)
+#   GH_PAT       — GitHub PAT with repo scope (GITHUB_TOKEN cannot write secrets)
 #
 # Optional repo variable:
 #   N8N_AGENT_SKILLS_WORKFLOW_ID  — workflow ID of "AI Agents — 0 - Agent + skills"
@@ -22,7 +23,6 @@ on:
 
 permissions:
   contents: read
-  secrets: write
 
 concurrency:
   group: provision-n8n-${{ github.event.pull_request.number }}
@@ -60,7 +60,7 @@ jobs:
         env:
           N8N_API_URL:   ${{ secrets.N8N_API_URL }}
           N8N_API_KEY:   ${{ secrets.N8N_API_KEY }}
-          GH_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN:      ${{ secrets.GH_PAT }}
           OWNER:         ${{ github.repository_owner }}
           REPO:          ${{ github.event.repository.name }}
           SKILLS_WF_ID:  ${{ vars.N8N_AGENT_SKILLS_WORKFLOW_ID || '3cqVVop36Bx3ySMa' }}
