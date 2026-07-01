@@ -137,10 +137,8 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ -n "${PR_NUMBER:-}" ]; then
-            body="⏳ **Agent eval running** — \`${AGENT}\`
-
-Concurrency: ${CONCUR} · Branch: \`${BRANCH}\`
-[View live logs →](${RUN_URL})"
+            body=$(printf '⏳ **Agent eval running** — `%s`\n\nConcurrency: %s · Branch: `%s`\n[View live logs →](%s)' \
+              "$AGENT" "$CONCUR" "$BRANCH" "$RUN_URL")
             comment_id=$(gh api "repos/${OWNER}/${REPO}/issues/${PR_NUMBER}/comments" \
               --method POST -f body="$body" --jq '.id' 2>/dev/null || echo "")
             echo "${comment_id:-}" > /tmp/eval-comment-id.txt
@@ -196,10 +194,8 @@ Concurrency: ${CONCUR} · Branch: \`${BRANCH}\`
           if [ -n "${PR_NUMBER:-}" ] && [ -f /tmp/eval-comment-id.txt ]; then
             comment_id=$(cat /tmp/eval-comment-id.txt)
             if [ -n "$comment_id" ]; then
-              body="${verdict} — \`${AGENT}\`
-
-${detail}
-[View run →](${RUN_URL})"
+              body=$(printf '%s — `%s`\n\n%s\n[View run →](%s)' \
+                "$verdict" "$AGENT" "$detail" "$RUN_URL")
               gh api "repos/${OWNER}/${REPO}/issues/comments/${comment_id}" \
                 --method PATCH -f body="$body" > /dev/null 2>&1 || true
             fi
