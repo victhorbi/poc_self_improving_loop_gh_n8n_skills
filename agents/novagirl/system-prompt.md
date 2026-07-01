@@ -5,16 +5,13 @@
   "valid_games": 10,
   "errored_games": 0,
   "successful_games": 10,
-  "success_rate": 80,
-  "avg_iterations": 9.5,
-  "total_tokens": 90692,
-  "tokens_per_game": 9069,
-  "evaluated_at": "2026-07-01T15:22:31.588Z",
-  "first_run": true,
-  "thresholds_used": {
-    "min_success_rate": 50,
-    "max_avg_iterations": 30
-  }
+  "success_rate": 100,
+  "avg_iterations": 8,
+  "total_tokens": 200291,
+  "tokens_per_game": 20029,
+  "evaluated_at": "2026-07-01T16:33:43.468Z",
+  "first_run": false,
+  "thresholds_used": null
 }
 -->
 
