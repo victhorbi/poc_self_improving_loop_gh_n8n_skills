@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  html, body {
+    @apply h-full bg-white text-gray-900;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+
+  #__next, main { @apply h-full; }
+}
+
+@layer components {
+  /* Traffic light dots */
+  .tl-pass  { @apply bg-green-500; }
+  .tl-warn  { @apply bg-amber-400; }
+  .tl-fail  { @apply bg-red-500; }
+  .tl-running { @apply bg-blue-500 animate-pulse; }
+  .tl-none  { @apply bg-gray-300; }
+
+  /* Chat bubbles */
+  .bubble-agent {
+    @apply bg-vw-purple-light text-gray-900 rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[80%] self-start text-sm leading-relaxed;
+  }
+  .bubble-user {
+    @apply bg-gray-900 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 max-w-[80%] self-end text-sm leading-relaxed;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-300 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-gray-400; }
+}
