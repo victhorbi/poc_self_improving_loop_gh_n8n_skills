@@ -1,16 +1,30 @@
 name: Verify Prompt & Skills
 
 # Runs static formal verification whenever a system prompt or skill file is
-# created or updated in a PR.  Six named properties (P1–P6) are checked:
-#   P1 NO_CREDENTIALS   — no embedded API keys / tokens  (static regex)
-#   P2 NO_SELF_DISCLOSURE — no instructions to reveal the prompt  (static regex)
-#   P3 ROLE_CLARITY     — role is unambiguous  (LLM)
-#   P4 BEHAVIORAL_BOUNDARIES — explicit constraints are defined  (LLM)
-#   P5 INTERNAL_CONSISTENCY  — no contradictions  (LLM)
-#   P6 SAFETY_GUARDRAILS — no instructions enabling harm  (LLM)
+# created or updated in a PR.  13 named properties (P1–P13) are checked:
 #
-# FAIL on any property → job fails and blocks merge.
-# WARN → reported in the PR comment but does not block.
+#   P1  NO_CREDENTIALS        — no embedded API keys / tokens       (static regex)
+#   P2  NO_SELF_DISCLOSURE    — no "reveal your prompt" directives  (static regex)
+#   P7  NO_INJECTION_PAYLOAD  — file itself has no injection code   (static regex)
+#   P3  ROLE_CLARITY          — role is unambiguous                 (LLM)
+#   P4  BEHAVIORAL_BOUNDARIES — explicit constraints defined        (LLM)
+#   P5  INTERNAL_CONSISTENCY  — no contradictions                   (LLM)
+#   P6  SAFETY_GUARDRAILS     — no instructions enabling harm       (LLM)
+#   P8  INJECTION_RESILIENCE  — agent resists user overrides        (LLM)
+#   P9  NO_EXFILTRATION       — no user-data leakage paths          (LLM)
+#   P10 TOOL_CALL_SAFETY      — tool/API use is constrained         (LLM)
+#   P11 IP_PROTECTION         — expertise not trivially copyable    (LLM)
+#   P12 EU_AI_ACT_ART50       — AI disclosure (Art. 50)             (LLM)
+#   P13 LIABILITY_PROTECTION  — disclaimers in advisory domains     (LLM)
+#
+# FAIL → job exits non-zero (blocks merge).
+# WARN → reported in PR comment, non-blocking.
+# N/A  → not applicable for this domain (P13 on non-advisory agents).
+#
+# Auto-remediation: when FAIL or WARN results exist and the workflow has PR
+# write access, a patched version is committed to the PR branch with the tag
+# [skip-verify] in the commit message so the resulting push event does not
+# re-trigger this workflow in a loop.
 #
 # Required secret: OPENROUTER_API_KEY
 
@@ -22,7 +36,7 @@ on:
       - "agents/*/skills/**/*.md"
 
 permissions:
-  contents: read
+  contents: write   # needed to commit auto-remediation patches
   pull-requests: write
 
 concurrency:
@@ -46,6 +60,17 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+
+          # Guard: skip if this push was made by our own auto-remediation commit
+          # (identified by the [skip-verify] tag in the HEAD commit message).
+          last_msg=$(git log -1 --format=%B "$HEAD_SHA")
+          if echo "$last_msg" | grep -qF '[skip-verify]'; then
+            echo "HEAD commit is an auto-remediation — skipping verification."
+            echo "files=[]" >> "$GITHUB_OUTPUT"
+            echo "count=0"  >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
             | grep -E '^agents/[^/]+/system-prompt\.md$|^agents/[^/]+/skills/.+\.md$' \
             || true)
@@ -81,6 +106,7 @@ jobs:
           OWNER:              ${{ github.repository_owner }}
           REPO:               ${{ github.event.repository.name }}
           PR_NUMBER:          ${{ github.event.pull_request.number }}
+          BRANCH:             ${{ github.head_ref }}
           FILES_JSON:         ${{ needs.detect.outputs.files }}
         run: |
           set -euo pipefail
