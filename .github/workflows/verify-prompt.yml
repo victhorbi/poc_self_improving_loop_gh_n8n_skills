@@ -112,9 +112,6 @@ jobs:
           set -euo pipefail
           # Convert JSON array → one path per line, prefixed with ../ (we run from agent-eval/)
           readarray -t FILES < <(
-            echo "$FILES_JSON" | python3 -c "
-import json, sys
-for f in json.loads(sys.stdin.read()):
-    print('../' + f)
-")
+            echo "$FILES_JSON" | jq -r '.[] | "../" + .'
+          )
           npm run verify -- "${FILES[@]}"
