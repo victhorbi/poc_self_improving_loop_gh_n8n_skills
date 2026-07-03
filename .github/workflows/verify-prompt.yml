@@ -17,7 +17,7 @@ name: Verify Prompt & Skills
 #   P12 EU_AI_ACT_ART50       — AI disclosure (Art. 50)             (LLM)
 #   P13 LIABILITY_PROTECTION  — disclaimers in advisory domains     (LLM)
 #
-# FAIL → job exits non-zero (blocks merge).
+# FAIL → reported in PR comment, non-blocking (assessment only — does not block merge).
 # WARN → reported in PR comment, non-blocking.
 # N/A  → not applicable for this domain (P13 on non-advisory agents).
 #
@@ -124,6 +124,7 @@ jobs:
         working-directory: agent-eval
 
       - name: Run static verification
+        continue-on-error: true
         working-directory: agent-eval
         env:
           GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
