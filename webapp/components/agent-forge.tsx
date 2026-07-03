@@ -1157,8 +1157,8 @@ export default function AgentForge() {
       {/* Body: three columns */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* Left sidebar */}
-        <aside className="w-56 flex-shrink-0 border-r border-gray-200 flex flex-col overflow-hidden bg-gray-50/50">
+        {/* Left sidebar — hidden on Create tab */}
+        <aside className={`w-56 flex-shrink-0 border-r border-gray-200 flex flex-col overflow-hidden bg-gray-50/50 ${activeTab === 'Create' ? 'hidden' : ''}`}>
           <div className="flex-1 overflow-y-auto p-4">
             <SectionHeader label="Agents" />
             {agentsLoading ? (
