@@ -9,7 +9,6 @@ name: Provision n8n Agent Workflow
 # Required secrets:
 #   N8N_API_URL  — n8n instance base URL, e.g. https://my-n8n.example.com
 #   N8N_API_KEY  — n8n API key (Settings → n8n API)
-#   GH_PAT       — GitHub PAT with repo scope (GITHUB_TOKEN cannot write secrets)
 #
 # Optional repo variable:
 #   N8N_AGENT_SKILLS_WORKFLOW_ID  — workflow ID of "AI Agents — 0 - Agent + skills"
@@ -29,15 +28,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  provision:
+  detect:
     runs-on: ubuntu-latest
+    outputs:
+      skip:   ${{ steps.find.outputs.skip }}
+      agents: ${{ steps.find.outputs.agents }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
         with:
           fetch-depth: 0
 
-      - name: Detect newly added agent folders
-        id: detect
+      - id: find
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -55,16 +56,27 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+  provision:
+    needs: detect
+    if: needs.detect.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      secrets: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+        with:
+          fetch-depth: 0
+
       - name: Provision workflow and set secret
-        if: steps.detect.outputs.skip == 'false'
         env:
           N8N_API_URL:   ${{ secrets.N8N_API_URL }}
           N8N_API_KEY:   ${{ secrets.N8N_API_KEY }}
-          GH_TOKEN:      ${{ secrets.GH_PAT }}
+          GH_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
           OWNER:         ${{ github.repository_owner }}
           REPO:          ${{ github.event.repository.name }}
           SKILLS_WF_ID:  ${{ vars.N8N_AGENT_SKILLS_WORKFLOW_ID || '3cqVVop36Bx3ySMa' }}
-          AGENTS:        ${{ steps.detect.outputs.agents }}
+          AGENTS:        ${{ needs.detect.outputs.agents }}
         run: |
           set -euo pipefail
 
