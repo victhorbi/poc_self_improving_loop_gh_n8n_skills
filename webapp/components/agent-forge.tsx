@@ -8,6 +8,31 @@ import type {
 
 // ── Utility helpers ───────────────────────────────────────────────────────────
 
+type DiffLine = { type: 'unchanged' | 'added' | 'removed'; text: string }
+
+function diffLines(a: string, b: string): DiffLine[] {
+  const aLines = a.split('\n')
+  const bLines = b.split('\n')
+  const result: DiffLine[] = []
+  let ai = 0, bi = 0
+  while (ai < aLines.length || bi < bLines.length) {
+    if (ai >= aLines.length) { result.push({ type: 'added', text: bLines[bi++] }); continue }
+    if (bi >= bLines.length) { result.push({ type: 'removed', text: aLines[ai++] }); continue }
+    if (aLines[ai] === bLines[bi]) { result.push({ type: 'unchanged', text: aLines[ai] }); ai++; bi++; continue }
+    const bAhead = bLines.slice(bi, bi + 8).indexOf(aLines[ai])
+    const aAhead = aLines.slice(ai, ai + 8).indexOf(bLines[bi])
+    if (bAhead === -1 && aAhead === -1) {
+      result.push({ type: 'removed', text: aLines[ai++] })
+      result.push({ type: 'added', text: bLines[bi++] })
+    } else if (bAhead !== -1 && (aAhead === -1 || bAhead <= aAhead)) {
+      result.push({ type: 'added', text: bLines[bi++] })
+    } else {
+      result.push({ type: 'removed', text: aLines[ai++] })
+    }
+  }
+  return result
+}
+
 function toDisplayName(s: string) {
   return s.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
@@ -243,20 +268,36 @@ const FORMAL_CHECKS = [
   { rule: 'P13', name: 'LIABILITY_PROTECTION',   short: 'Disclaimers in advisory domains' },
 ] as const
 
-function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, applyLoading, onRun, runDispatching, collapsed }: {
+function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, applyLoading, onRun, runDispatching, collapsed, currentPrompt, onLoadRemediation }: {
   comments: PRComment[]; workflowRuns: WorkflowRun[]; onApplyChanges: () => void
   applyLoading: boolean; onRun: () => void; runDispatching: boolean; collapsed?: boolean
+  currentPrompt: string; onLoadRemediation: () => Promise<string | null>
 }) {
+  const [remediatedPrompt, setRemediatedPrompt] = useState<string | null>(null)
+  const [loadingDiff, setLoadingDiff] = useState(false)
+  const [showDiff, setShowDiff] = useState(false)
+
   const verifyComment = comments
     .filter(c => c.body.includes('Static Verification Report'))
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
   const verifyRun = workflowRuns.filter(r => r.workflowType === 'verify')
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
   const rows = verifyComment ? parseVerifyComment(verifyComment.body) : null
-  const hasRemediation = verifyComment?.body.includes('[skip-verify]') || verifyComment?.body.includes('auto-remediation committed')
+  const hasRemediation = verifyComment?.body.includes('auto-remediation committed')
   const light = workflowLight(workflowRuns, 'verify')
-
   const rowMap = new Map(rows?.map(r => [r.rule, r]) ?? [])
+
+  const handleViewChanges = async () => {
+    setLoadingDiff(true)
+    const prompt = await onLoadRemediation()
+    setRemediatedPrompt(prompt)
+    setShowDiff(true)
+    setLoadingDiff(false)
+  }
+
+  const diff = (remediatedPrompt && showDiff) ? diffLines(currentPrompt, remediatedPrompt) : null
+  const hasActualChanges = diff?.some(l => l.type !== 'unchanged') ?? false
+  const failedChecks = rows?.filter(r => r.status === 'FAIL' || r.status === 'WARN') ?? []
 
   return (
     <div className="pb-4 border-b border-gray-100">
@@ -284,14 +325,61 @@ function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, app
               </div>
             )
           })}
+
           {hasRemediation && (
-            <div className="mt-2 flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
-              <span className="text-amber-600 text-xs">🔧</span>
-              <p className="flex-1 text-[10px] text-amber-700">Auto-remediated version committed.</p>
-              <button onClick={onApplyChanges} disabled={applyLoading}
-                className="flex-shrink-0 px-2 py-1 bg-vw-purple text-white text-[10px] font-semibold rounded hover:bg-vw-purple-dark transition disabled:opacity-50">
-                {applyLoading ? '…' : 'Apply →'}
-              </button>
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 overflow-hidden">
+              <div className="flex items-center gap-2 px-2 py-1.5">
+                <span className="text-amber-600 text-xs">🔧</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-medium text-amber-800">Auto-remediation committed</p>
+                  {failedChecks.length > 0 && (
+                    <p className="text-[9px] text-amber-600">
+                      Fixed: {failedChecks.map(r => r.rule).join(', ')}
+                    </p>
+                  )}
+                </div>
+                <div className="flex gap-1 flex-shrink-0">
+                  {!showDiff && (
+                    <button onClick={handleViewChanges} disabled={loadingDiff}
+                      className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-semibold rounded hover:bg-amber-200 transition disabled:opacity-50">
+                      {loadingDiff ? '…' : 'View Changes'}
+                    </button>
+                  )}
+                  {showDiff && (
+                    <button onClick={() => setShowDiff(false)}
+                      className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-semibold rounded hover:bg-amber-200 transition">
+                      Hide
+                    </button>
+                  )}
+                  <button onClick={onApplyChanges} disabled={applyLoading}
+                    className="px-2 py-0.5 bg-vw-purple text-white text-[9px] font-semibold rounded hover:bg-vw-purple-dark transition disabled:opacity-50">
+                    {applyLoading ? '…' : 'Apply →'}
+                  </button>
+                </div>
+              </div>
+
+              {showDiff && diff && (
+                <div className="border-t border-amber-200 max-h-64 overflow-y-auto">
+                  {!hasActualChanges ? (
+                    <p className="text-[10px] text-gray-400 px-3 py-2 italic">No text changes detected.</p>
+                  ) : (
+                    <pre className="text-[9px] leading-relaxed font-mono p-2 whitespace-pre-wrap break-words">
+                      {diff.map((line, i) => (
+                        <div key={i} className={
+                          line.type === 'added' ? 'bg-green-50 text-green-800' :
+                          line.type === 'removed' ? 'bg-red-50 text-red-700 line-through opacity-70' :
+                          'text-gray-500'
+                        }>
+                          <span className="select-none mr-1 opacity-40">
+                            {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
+                          </span>
+                          {line.text}
+                        </div>
+                      ))}
+                    </pre>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -527,7 +615,6 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
   const dispatch = async (workflow: string, inputs?: Record<string, string>) => {
     if (!agentData) return
     setDispatching(p => ({ ...p, [workflow]: true }))
-    setDispatchMsg(null)
     try {
       const res = await fetch('/api/workflows', {
         method: 'POST',
@@ -535,17 +622,49 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
         body: JSON.stringify({ workflow, ref: agentData.prBranch ?? 'main', inputs }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setDispatchMsg({ ok: false, text: data.error ?? `HTTP ${res.status}` })
-      } else {
-        setDispatchMsg({ ok: true, text: 'Workflow dispatched — results will appear shortly.' })
-        setTimeout(() => setDispatchMsg(null), 4000)
-      }
+      if (!res.ok) setDispatchMsg({ ok: false, text: data.error ?? `HTTP ${res.status}` })
     } catch (e) {
       setDispatchMsg({ ok: false, text: String(e) })
     } finally {
       setDispatching(p => ({ ...p, [workflow]: false }))
     }
+  }
+
+  const runAll = async () => {
+    if (!agentData) return
+    setDispatchMsg(null)
+    const agent = agentData.name
+
+    // 1. Verify — always
+    dispatch('verify-prompt.yml', { agent })
+
+    // 2. Check webhook before running eval
+    const { configured: hasWebhook } = await fetch(`/api/agents/${agent}/webhook-status`)
+      .then(r => r.json()).catch(() => ({ configured: false }))
+
+    if (!hasWebhook) {
+      setDispatchMsg({ ok: false, text: 'No N8N webhook URL configured — eval skipped. Set N8N_AGENT_WEBHOOK_URL in .env.local.' })
+      return
+    }
+
+    // 3. Generate eval set only if missing
+    const { exists: evalSetExists } = await fetch(`/api/agents/${agent}/eval-set`)
+      .then(r => r.json()).catch(() => ({ exists: false }))
+    if (!evalSetExists) dispatch('generate-eval-set.yml', { agent_name: agent })
+
+    // 4. Eval — only if webhook available
+    dispatch('agent-eval.yml', { agent_name: agent })
+
+    setDispatchMsg({ ok: true, text: 'Workflows dispatched — results will appear shortly.' })
+    setTimeout(() => setDispatchMsg(null), 5000)
+  }
+
+  const loadRemediatedPrompt = async (): Promise<string | null> => {
+    if (!agentData?.prBranch) return null
+    try {
+      const data = await fetch(`/api/agents/${agentData.name}?branch=${encodeURIComponent(agentData.prBranch)}`).then(r => r.json())
+      return data.prompt ?? null
+    } catch { return null }
   }
 
   const onDragStart = (e: React.MouseEvent) => {
@@ -588,13 +707,8 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
             ? <Spinner className="w-3 h-3 text-blue-500" />
             : <TrafficDot light={overallLight} size="md" />}
           <button
-            onClick={() => {
-              const agent = agentData.name
-              dispatch('verify-prompt.yml', { agent })
-              dispatch('agent-eval.yml', { agent_name: agent })
-              dispatch('auto-analyze.yml', { agent_name: agent })
-            }}
-            title="Run all checks"
+            onClick={runAll}
+            title="Verify + eval (auto-analyze is manual)"
             className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-vw-purple bg-vw-purple-light rounded-lg hover:bg-vw-purple/20 transition"
           >
             ▶ Run all
@@ -617,6 +731,8 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
           onRun={() => dispatch('verify-prompt.yml', { agent: agentData.name })}
           runDispatching={!!dispatching['verify-prompt.yml']}
           collapsed={chatLogsOpen}
+          currentPrompt={agentData.prompt}
+          onLoadRemediation={loadRemediatedPrompt}
         />
         <div className="pt-4">
           <SimulatedUsersSection
