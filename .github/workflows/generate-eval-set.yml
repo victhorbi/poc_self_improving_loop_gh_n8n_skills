@@ -41,9 +41,11 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            # Manual dispatch — use the provided agent folder directly
-            echo "Manual dispatch for: $DISPATCH_AGENT"
-            matrix=$(python3 -c "import json; print(json.dumps(['$DISPATCH_AGENT']))")
+            # Normalize to agents/<name> form (accept both "novagirl" and "agents/novagirl")
+            folder=$(echo "$DISPATCH_AGENT" | sed 's|^agents/||')
+            agent_folder="agents/$folder"
+            echo "Manual dispatch for: $agent_folder"
+            matrix=$(python3 -c "import json; print(json.dumps(['$agent_folder']))")
             echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           else
             # PR event — detect newly added agent folders from diff
