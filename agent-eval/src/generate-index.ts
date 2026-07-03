@@ -16,6 +16,7 @@ async function main(): Promise<void> {
     openRouterApiKey: require("OPENROUTER_API_KEY"),
     count:           parseInt(process.env.EVAL_COUNT ?? "10", 10),
     model:           process.env.EVAL_GEN_MODEL ?? "openai/gpt-5.4-mini",
+    force:           process.env.FORCE_REGEN === "true",
   };
 
   const generated = await generateEvalSet(cfg);
