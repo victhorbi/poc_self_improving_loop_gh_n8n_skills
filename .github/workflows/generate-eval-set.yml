@@ -3,13 +3,24 @@ name: Generate Eval Set
 on:
   pull_request:
     types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      agent_name:
+        description: "Agent folder (e.g. agents/akinator)"
+        required: true
+        type: string
+      num_tests:
+        description: "Number of eval cases to generate"
+        required: false
+        default: "10"
+        type: string
 
 # Least privilege: only needs to write back the generated eval-set.json.
 permissions:
   contents: write
 
 concurrency:
-  group: generate-eval-${{ github.event.pull_request.number }}
+  group: generate-eval-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -25,20 +36,29 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DISPATCH_AGENT: ${{ github.event.inputs.agent_name }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          # --diff-filter=A: only files added in this PR (not modified)
-          new_agents=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" \
-            | grep '^agents/[^/]*/system-prompt\.md$' \
-            | sed 's|/system-prompt\.md$||' \
-            || true)
-          if [ -z "$new_agents" ]; then
-            echo "No new agent folders detected — skipping."
-            echo "matrix=[]" >> "$GITHUB_OUTPUT"
-          else
-            matrix=$(printf '%s\n' $new_agents | python3 -c 'import sys,json;print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')
-            echo "New agent folders: $matrix"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Manual dispatch — use the provided agent folder directly
+            echo "Manual dispatch for: $DISPATCH_AGENT"
+            matrix=$(python3 -c "import json; print(json.dumps(['$DISPATCH_AGENT']))")
             echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          else
+            # PR event — detect newly added agent folders from diff
+            new_agents=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" \
+              | grep '^agents/[^/]*/system-prompt\.md$' \
+              | sed 's|/system-prompt\.md$||' \
+              || true)
+            if [ -z "$new_agents" ]; then
+              echo "No new agent folders detected — skipping."
+              echo "matrix=[]" >> "$GITHUB_OUTPUT"
+            else
+              matrix=$(printf '%s\n' $new_agents | python3 -c 'import sys,json;print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')
+              echo "New agent folders: $matrix"
+              echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # actions/setup-node v4
@@ -61,8 +81,8 @@ jobs:
           OPENROUTER_API_KEY:  ${{ secrets.OPENROUTER_API_KEY }}
           OWNER:               ${{ github.repository_owner }}
           REPO:                ${{ github.event.repository.name }}
-          BRANCH:              ${{ github.head_ref }}
-          EVAL_COUNT:          "10"
+          BRANCH:              ${{ github.head_ref || '' }}
+          EVAL_COUNT:          ${{ github.event.inputs.num_tests || '10' }}
           # Override model via repo secret EVAL_GEN_MODEL if needed; defaults to gpt-4.1-mini
           EVAL_GEN_MODEL:      ${{ secrets.EVAL_GEN_MODEL || 'openai/gpt-5.4-mini' }}
         run: |
