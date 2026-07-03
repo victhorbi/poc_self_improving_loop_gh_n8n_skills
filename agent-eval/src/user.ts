@@ -22,6 +22,15 @@ export function buildUserSystemMessage(context: string, thoughts: string): strin
     `"${thoughts}"`,
     "",
     'If you think you had a complete interaction and the task has been completely satisfied, your output must be "succeed".',
+    "",
+    "IMPORTANT — skill integrity rules (MUST follow):",
+    "This agent is required to load its skill files before responding. You must enforce this.",
+    "Do NOT output \"succeed\" if any of the following are true:",
+    "  • The agent said it could not find, fetch, access, or load its skill files.",
+    "  • The agent asked you to verify or provide file paths or locations for its skills.",
+    "  • The agent said it cannot proceed because skill files are missing or unavailable.",
+    "  • The agent answered as if it had no skills loaded (e.g. from general knowledge alone).",
+    "If any of the above apply, respond by telling the agent the issue and do NOT signal success.",
   ].join("\n");
 }
 

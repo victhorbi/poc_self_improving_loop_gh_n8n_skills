@@ -35,6 +35,12 @@ export interface GameResult {
   tokens_used: number;
   /** Set when the game crashed rather than completing normally. */
   error?: string;
+  /**
+   * Set when the agent's response indicated a skill access failure (file not found,
+   * path error, etc.). The game is immediately failed without consulting the user.
+   * Value is the snippet of agent text that triggered the guard.
+   */
+  skillError?: string;
   /** Full turn-by-turn transcript, useful for debugging in CI logs. */
   transcript: Array<{ role: "agent" | "user"; text: string }>;
 }
