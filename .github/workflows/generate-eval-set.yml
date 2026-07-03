@@ -85,6 +85,8 @@ jobs:
           REPO:                ${{ github.event.repository.name }}
           BRANCH:              ${{ github.head_ref || '' }}
           EVAL_COUNT:          ${{ github.event.inputs.num_tests || '10' }}
+          # Manual dispatch always force-regenerates (user explicitly asked for it)
+          FORCE_REGEN:         ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
           # Override model via repo secret EVAL_GEN_MODEL if needed; defaults to gpt-4.1-mini
           EVAL_GEN_MODEL:      ${{ secrets.EVAL_GEN_MODEL || 'openai/gpt-5.4-mini' }}
         run: |
