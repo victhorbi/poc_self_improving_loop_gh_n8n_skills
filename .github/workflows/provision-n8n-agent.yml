@@ -62,7 +62,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      secrets: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
         with:
@@ -100,11 +99,11 @@ jobs:
 
             agent_name=$(basename "$agent_folder")
             agent_upper=$(echo "$agent_name" | tr '[:lower:]-' '[:upper:]_')
-            secret_name="N8N_AGENT_${agent_upper}_WEBHOOK_URL"
+            var_name="N8N_AGENT_${agent_upper}_WEBHOOK_URL"
 
-            # Idempotency: skip if secret already exists
-            if gh api "repos/${OWNER}/${REPO}/actions/secrets/${secret_name}" --silent 2>/dev/null; then
-              echo "⚠️  ${secret_name} already set — skipping."
+            # Idempotency: skip if variable already exists
+            if gh api "repos/${OWNER}/${REPO}/actions/variables/${var_name}" --silent 2>/dev/null; then
+              echo "⚠️  ${var_name} already set — skipping."
               continue
             fi
 
@@ -212,7 +211,7 @@ jobs:
             echo "  Activated"
 
             webhook_url="${N8N_API_URL}/webhook/${webhook_id}"
-            printf '%s' "$webhook_url" | gh secret set "$secret_name" --repo "${OWNER}/${REPO}"
-            echo "✓ ${secret_name} → ${webhook_url}"
+            gh variable set "$var_name" --body "$webhook_url" --repo "${OWNER}/${REPO}"
+            echo "✓ ${var_name} → ${webhook_url}"
 
           done <<< "$AGENTS"
