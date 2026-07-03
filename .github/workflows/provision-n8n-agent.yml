@@ -19,12 +19,23 @@ on:
     types: [opened, synchronize]
     paths:
       - "agents/*/system-prompt.md"
+  workflow_dispatch:
+    inputs:
+      agent_name:
+        description: "Agent folder to (re-)provision, e.g. agents/novagirl or novagirl"
+        required: true
+        type: string
+      force:
+        description: "Re-provision even if webhook variable already exists"
+        required: false
+        default: "false"
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: provision-n8n-${{ github.event.pull_request.number }}
+  group: provision-n8n-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -33,6 +44,7 @@ jobs:
     outputs:
       skip:   ${{ steps.find.outputs.skip }}
       agents: ${{ steps.find.outputs.agents }}
+      force:  ${{ steps.find.outputs.force }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
         with:
@@ -40,20 +52,33 @@ jobs:
 
       - id: find
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA:       ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA:       ${{ github.event.pull_request.head.sha }}
+          DISPATCH_AGENT: ${{ github.event.inputs.agent_name }}
+          DISPATCH_FORCE: ${{ github.event.inputs.force }}
+          EVENT_NAME:     ${{ github.event_name }}
         run: |
           set -euo pipefail
-          new_agents=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" \
-            | grep '^agents/[^/]*/system-prompt\.md$' \
-            | sed 's|/system-prompt\.md$||' || true)
-          if [ -z "$new_agents" ]; then
-            echo "No new agent folders — skipping."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "New agent folders: $new_agents"
-            { echo "agents<<EOF"; echo "$new_agents"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            folder=$(echo "$DISPATCH_AGENT" | sed 's|^agents/||')
+            agent_folder="agents/$folder"
+            echo "Manual dispatch for: $agent_folder (force=$DISPATCH_FORCE)"
+            { echo "agents<<EOF"; echo "$agent_folder"; echo "EOF"; } >> "$GITHUB_OUTPUT"
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "force=${DISPATCH_FORCE:-false}" >> "$GITHUB_OUTPUT"
+          else
+            echo "force=false" >> "$GITHUB_OUTPUT"
+            new_agents=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" \
+              | grep '^agents/[^/]*/system-prompt\.md$' \
+              | sed 's|/system-prompt\.md$||' || true)
+            if [ -z "$new_agents" ]; then
+              echo "No new agent folders — skipping."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "New agent folders: $new_agents"
+              { echo "agents<<EOF"; echo "$new_agents"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
   provision:
@@ -76,6 +101,7 @@ jobs:
           REPO:          ${{ github.event.repository.name }}
           SKILLS_WF_ID:  ${{ vars.N8N_AGENT_SKILLS_WORKFLOW_ID || '3cqVVop36Bx3ySMa' }}
           AGENTS:        ${{ needs.detect.outputs.agents }}
+          FORCE:         ${{ needs.detect.outputs.force }}
         run: |
           set -euo pipefail
 
@@ -101,9 +127,9 @@ jobs:
             agent_upper=$(echo "$agent_name" | tr '[:lower:]-' '[:upper:]_')
             var_name="N8N_AGENT_${agent_upper}_WEBHOOK_URL"
 
-            # Idempotency: skip if variable already exists
-            if gh api "repos/${OWNER}/${REPO}/actions/variables/${var_name}" --silent 2>/dev/null; then
-              echo "⚠️  ${var_name} already set — skipping."
+            # Idempotency: skip if variable already exists (unless force=true)
+            if [ "${FORCE:-false}" != "true" ] && gh api "repos/${OWNER}/${REPO}/actions/variables/${var_name}" --silent 2>/dev/null; then
+              echo "⚠️  ${var_name} already set — skipping (use force=true to re-provision)."
               continue
             fi
 
