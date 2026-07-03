@@ -1,0 +1,123 @@
+name: Verify Prompt & Skills
+
+# Runs static formal verification whenever a system prompt or skill file is
+# created or updated in a PR.  13 named properties (P1–P13) are checked:
+#
+#   P1  NO_CREDENTIALS        — no embedded API keys / tokens       (static regex)
+#   P2  NO_SELF_DISCLOSURE    — no "reveal your prompt" directives  (static regex)
+#   P7  NO_INJECTION_PAYLOAD  — file itself has no injection code   (static regex)
+#   P3  ROLE_CLARITY          — role is unambiguous                 (LLM)
+#   P4  BEHAVIORAL_BOUNDARIES — explicit constraints defined        (LLM)
+#   P5  INTERNAL_CONSISTENCY  — no contradictions                   (LLM)
+#   P6  SAFETY_GUARDRAILS     — no instructions enabling harm       (LLM)
+#   P8  INJECTION_RESILIENCE  — agent resists user overrides        (LLM)
+#   P9  NO_EXFILTRATION       — no user-data leakage paths          (LLM)
+#   P10 TOOL_CALL_SAFETY      — tool/API use is constrained         (LLM)
+#   P11 IP_PROTECTION         — expertise not trivially copyable    (LLM)
+#   P12 EU_AI_ACT_ART50       — AI disclosure (Art. 50)             (LLM)
+#   P13 LIABILITY_PROTECTION  — disclaimers in advisory domains     (LLM)
+#
+# FAIL → job exits non-zero (blocks merge).
+# WARN → reported in PR comment, non-blocking.
+# N/A  → not applicable for this domain (P13 on non-advisory agents).
+#
+# Auto-remediation: when FAIL or WARN results exist and the workflow has PR
+# write access, a patched version is committed to the PR branch with the tag
+# [skip-verify] in the commit message so the resulting push event does not
+# re-trigger this workflow in a loop.
+#
+# Required secret: OPENROUTER_API_KEY
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - "agents/*/system-prompt.md"
+      - "agents/*/skills/**/*.md"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or SHA to verify (defaults to main)"
+        required: false
+        default: "main"
+
+permissions:
+  contents: write   # needed to commit auto-remediation patches
+  pull-requests: write
+
+concurrency:
+  group: verify-prompt-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      files: ${{ steps.find.outputs.files }}
+      count: ${{ steps.find.outputs.count }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+        with:
+          fetch-depth: 0
+
+      - id: find
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Guard: skip if this push was made by our own auto-remediation commit
+          # (identified by the [skip-verify] tag in the HEAD commit message).
+          last_msg=$(git log -1 --format=%B "$HEAD_SHA")
+          if echo "$last_msg" | grep -qF '[skip-verify]'; then
+            echo "HEAD commit is an auto-remediation — skipping verification."
+            echo "files=[]" >> "$GITHUB_OUTPUT"
+            echo "count=0"  >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+            | grep -E '^agents/[^/]+/system-prompt\.md$|^agents/[^/]+/skills/.+\.md$' \
+            || true)
+          files=$(printf '%s' "$changed" | python3 -c \
+            "import sys, json; lines=[l.strip() for l in sys.stdin if l.strip()]; print(json.dumps(lines))")
+          count=$(printf '%s' "$files" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))")
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Files to verify: $files"
+
+  verify:
+    needs: detect
+    if: needs.detect.outputs.count != '0'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+
+      - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # actions/setup-node v4
+        with:
+          node-version-file: agent-eval/.nvmrc
+          cache: npm
+          cache-dependency-path: agent-eval/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: agent-eval
+
+      - name: Run static verification
+        working-directory: agent-eval
+        env:
+          GITHUB_TOKEN:       ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OWNER:              ${{ github.repository_owner }}
+          REPO:               ${{ github.event.repository.name }}
+          PR_NUMBER:          ${{ github.event.pull_request.number }}
+          BRANCH:             ${{ github.head_ref }}
+          FILES_JSON:         ${{ needs.detect.outputs.files }}
+        run: |
+          set -euo pipefail
+          # Convert JSON array → one path per line, prefixed with ../ (we run from agent-eval/)
+          readarray -t FILES < <(
+            echo "$FILES_JSON" | jq -r '.[] | "../" + .'
+          )
+          npm run verify -- "${FILES[@]}"
