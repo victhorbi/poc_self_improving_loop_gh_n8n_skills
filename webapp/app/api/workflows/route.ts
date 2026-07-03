@@ -44,8 +44,14 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { workflow, ref } = await req.json() as { workflow: string; ref: string }
-    await ghPost(`/repos/${OWNER}/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`, { ref })
+    const { workflow, ref, inputs } = await req.json() as {
+      workflow: string
+      ref: string
+      inputs?: Record<string, string>
+    }
+    const body: Record<string, unknown> = { ref }
+    if (inputs && Object.keys(inputs).length > 0) body.inputs = inputs
+    await ghPost(`/repos/${OWNER}/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`, body)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })

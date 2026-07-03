@@ -36,6 +36,10 @@ on:
       - "agents/*/skills/**/*.md"
   workflow_dispatch:
     inputs:
+      agent:
+        description: "Agent name to verify (e.g. novagirl). Leave blank to verify all agents on the branch."
+        required: false
+        default: ""
       ref:
         description: "Branch or SHA to verify (defaults to main)"
         required: false
@@ -46,7 +50,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: verify-prompt-${{ github.event.pull_request.number }}
+  group: verify-prompt-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -59,29 +63,44 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.inputs.ref || github.event.pull_request.head.sha || '' }}
 
       - id: find
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA:       ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA:       ${{ github.event.pull_request.head.sha }}
+          EVENT_NAME:     ${{ github.event_name }}
+          DISPATCH_AGENT: ${{ github.event.inputs.agent }}
         run: |
           set -euo pipefail
 
-          # Guard: skip if this push was made by our own auto-remediation commit
-          # (identified by the [skip-verify] tag in the HEAD commit message).
-          last_msg=$(git log -1 --format=%B "$HEAD_SHA")
-          if echo "$last_msg" | grep -qF '[skip-verify]'; then
-            echo "HEAD commit is an auto-remediation — skipping verification."
-            echo "files=[]" >> "$GITHUB_OUTPUT"
-            echo "count=0"  >> "$GITHUB_OUTPUT"
-            exit 0
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Manual dispatch: list files for the specified agent (or all agents)
+            if [ -n "$DISPATCH_AGENT" ]; then
+              pattern="agents/${DISPATCH_AGENT}/system-prompt.md agents/${DISPATCH_AGENT}/skills/*.md"
+            else
+              pattern="agents/*/system-prompt.md"
+            fi
+            found=$(git ls-files $pattern 2>/dev/null || true)
+            files=$(printf '%s' "$found" | python3 -c \
+              "import sys, json; lines=[l.strip() for l in sys.stdin if l.strip()]; print(json.dumps(lines))")
+          else
+            # Guard: skip if this push was made by our own auto-remediation commit
+            last_msg=$(git log -1 --format=%B "$HEAD_SHA")
+            if echo "$last_msg" | grep -qF '[skip-verify]'; then
+              echo "HEAD commit is an auto-remediation — skipping verification."
+              echo "files=[]" >> "$GITHUB_OUTPUT"
+              echo "count=0"  >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
+              | grep -E '^agents/[^/]+/system-prompt\.md$|^agents/[^/]+/skills/.+\.md$' \
+              || true)
+            files=$(printf '%s' "$changed" | python3 -c \
+              "import sys, json; lines=[l.strip() for l in sys.stdin if l.strip()]; print(json.dumps(lines))")
           fi
 
-          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" \
-            | grep -E '^agents/[^/]+/system-prompt\.md$|^agents/[^/]+/skills/.+\.md$' \
-            || true)
-          files=$(printf '%s' "$changed" | python3 -c \
-            "import sys, json; lines=[l.strip() for l in sys.stdin if l.strip()]; print(json.dumps(lines))")
           count=$(printf '%s' "$files" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))")
           echo "files=$files" >> "$GITHUB_OUTPUT"
           echo "count=$count" >> "$GITHUB_OUTPUT"

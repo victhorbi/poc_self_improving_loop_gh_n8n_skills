@@ -22,22 +22,23 @@ on:
 
 permissions:
   contents: read
-  secrets: write
 
 concurrency:
   group: provision-n8n-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  provision:
+  detect:
     runs-on: ubuntu-latest
+    outputs:
+      skip:   ${{ steps.find.outputs.skip }}
+      agents: ${{ steps.find.outputs.agents }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
         with:
           fetch-depth: 0
 
-      - name: Detect newly added agent folders
-        id: detect
+      - id: find
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -55,8 +56,19 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+  provision:
+    needs: detect
+    if: needs.detect.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      secrets: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+        with:
+          fetch-depth: 0
+
       - name: Provision workflow and set secret
-        if: steps.detect.outputs.skip == 'false'
         env:
           N8N_API_URL:   ${{ secrets.N8N_API_URL }}
           N8N_API_KEY:   ${{ secrets.N8N_API_KEY }}
@@ -64,7 +76,7 @@ jobs:
           OWNER:         ${{ github.repository_owner }}
           REPO:          ${{ github.event.repository.name }}
           SKILLS_WF_ID:  ${{ vars.N8N_AGENT_SKILLS_WORKFLOW_ID || '3cqVVop36Bx3ySMa' }}
-          AGENTS:        ${{ steps.detect.outputs.agents }}
+          AGENTS:        ${{ needs.detect.outputs.agents }}
         run: |
           set -euo pipefail
 

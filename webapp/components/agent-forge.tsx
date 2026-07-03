@@ -524,7 +524,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
   const [sidebarWidth, setSidebarWidth] = useState(440)
   const dragRef = useRef<{ startX: number; startW: number } | null>(null)
 
-  const dispatch = async (workflow: string) => {
+  const dispatch = async (workflow: string, inputs?: Record<string, string>) => {
     if (!agentData) return
     setDispatching(p => ({ ...p, [workflow]: true }))
     setDispatchMsg(null)
@@ -532,7 +532,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
       const res = await fetch('/api/workflows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflow, ref: agentData.prBranch ?? 'main' }),
+        body: JSON.stringify({ workflow, ref: agentData.prBranch ?? 'main', inputs }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -589,9 +589,10 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
             : <TrafficDot light={overallLight} size="md" />}
           <button
             onClick={() => {
-              dispatch('verify-prompt.yml')
-              dispatch('agent-eval.yml')
-              dispatch('auto-analyze.yml')
+              const agent = agentData.name
+              dispatch('verify-prompt.yml', { agent })
+              dispatch('agent-eval.yml', { agent_name: agent })
+              dispatch('auto-analyze.yml', { agent_name: agent })
             }}
             title="Run all checks"
             className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-vw-purple bg-vw-purple-light rounded-lg hover:bg-vw-purple/20 transition"
@@ -613,7 +614,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
           workflowRuns={workflowRuns}
           onApplyChanges={onApplyVerifyChanges}
           applyLoading={applyLoading}
-          onRun={() => dispatch('verify-prompt.yml')}
+          onRun={() => dispatch('verify-prompt.yml', { agent: agentData.name })}
           runDispatching={!!dispatching['verify-prompt.yml']}
           collapsed={chatLogsOpen}
         />
@@ -630,7 +631,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
             agentName={agentData.name}
             prBranch={agentData.prBranch}
             workflowRuns={workflowRuns}
-            onRun={() => dispatch('agent-eval.yml')}
+            onRun={() => dispatch('agent-eval.yml', { agent_name: agentData.name })}
             runDispatching={!!dispatching['agent-eval.yml']}
             open={chatLogsOpen}
             onToggle={() => setChatLogsOpen(v => !v)}
@@ -640,7 +641,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
           <AnalyseAndImproveSection
             comments={comments}
             workflowRuns={workflowRuns}
-            onRun={() => dispatch('auto-analyze.yml')}
+            onRun={() => dispatch('auto-analyze.yml', { agent_name: agentData.name })}
             runDispatching={!!dispatching['auto-analyze.yml']}
             collapsed={chatLogsOpen}
           />
