@@ -581,9 +581,9 @@ function ChatLogsSection({ agentName, prBranch, workflowRuns, onRun, runDispatch
 
 // ── Quality check: Analyse and Improve ───────────────────────────────────────
 
-function AnalyseAndImproveSection({ comments, workflowRuns, onRun, runDispatching, collapsed, isAuto, maxLogs, onToggleAuto, onChangeMaxLogs }: {
+function AnalyseAndImproveSection({ comments, workflowRuns, onRun, runDispatching, collapsed, isAuto, autoPercent, onToggleAuto, onChangeAutoPercent }: {
   comments: PRComment[]; workflowRuns: WorkflowRun[]; onRun: () => void; runDispatching: boolean; collapsed?: boolean
-  isAuto: boolean; maxLogs: number; onToggleAuto: () => void; onChangeMaxLogs: (n: number) => void
+  isAuto: boolean; autoPercent: number; onToggleAuto: () => void; onChangeAutoPercent: (n: number) => void
 }) {
   const run = workflowRuns.filter(r => r.workflowType === 'auto-analyze')
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0]
@@ -596,9 +596,8 @@ function AnalyseAndImproveSection({ comments, workflowRuns, onRun, runDispatchin
     return null
   })()
 
-  // Rough cost indicator: each conversation ≈ 8k tokens at ~$0.14/Mtok (DeepSeek)
-  const costLabel = maxLogs <= 3 ? 'low cost' : maxLogs <= 8 ? 'moderate cost' : 'higher cost'
-  const costColor = maxLogs <= 3 ? 'text-green-600' : maxLogs <= 8 ? 'text-amber-600' : 'text-red-500'
+  const costLabel = autoPercent <= 20 ? 'low cost' : autoPercent <= 60 ? 'moderate cost' : 'higher cost'
+  const costColor = autoPercent <= 20 ? 'text-green-600' : autoPercent <= 60 ? 'text-amber-600' : 'text-red-500'
 
   return (
     <div>
@@ -611,63 +610,76 @@ function AnalyseAndImproveSection({ comments, workflowRuns, onRun, runDispatchin
         running={runDispatching}
       />
       {!collapsed && (
-        <div className="pl-2 space-y-2 mt-1">
+        <div className="pl-2 space-y-2.5 mt-1">
           {/* Manual / Auto toggle */}
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-gray-500">Trigger:</span>
-            <div className="flex rounded-md border border-gray-200 overflow-hidden text-[10px] font-semibold">
+            <span className="text-xs text-gray-500">Trigger:</span>
+            <div className="flex rounded-md border border-gray-200 overflow-hidden text-xs font-semibold">
               <button
                 onClick={() => isAuto && onToggleAuto()}
-                className={`px-2.5 py-1 transition ${!isAuto ? 'bg-vw-purple text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                className={`px-3 py-1 transition ${!isAuto ? 'bg-vw-purple text-white' : 'text-gray-500 hover:bg-gray-50'}`}
               >
                 Manual
               </button>
               <button
                 onClick={() => !isAuto && onToggleAuto()}
-                className={`px-2.5 py-1 transition ${isAuto ? 'bg-vw-purple text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                className={`px-3 py-1 transition ${isAuto ? 'bg-vw-purple text-white' : 'text-gray-500 hover:bg-gray-50'}`}
               >
                 Auto
               </button>
             </div>
           </div>
 
-          {/* Auto config */}
-          {isAuto && (
-            <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 space-y-2">
-              <div className="flex items-center gap-2">
-                <label className="text-[10px] font-semibold text-gray-700 flex-1">Conversations to analyse</label>
-                <input
-                  type="number" min={1} max={20} value={maxLogs}
-                  onChange={e => onChangeMaxLogs(Math.max(1, Math.min(20, Number(e.target.value))))}
-                  className="w-14 px-2 py-1 border border-gray-200 rounded text-[10px] text-center focus:outline-none focus:ring-1 focus:ring-vw-purple/30"
-                />
+          {/* Manual: uses all available logs */}
+          {!isAuto && (
+            !run ? (
+              <p className="text-xs text-gray-400 italic">No run yet — uses all available chat logs.</p>
+            ) : (
+              <div className="space-y-1">
+                <p className="text-xs text-gray-600">
+                  {run.status !== 'completed' ? 'Analysing eval results…' :
+                   run.conclusion === 'success' ? '✓ Analysis complete' : '✗ Analysis failed'}
+                </p>
+                {improvePrLink && (
+                  <a href={improvePrLink} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-vw-purple bg-vw-purple-light px-2 py-1 rounded-full hover:bg-vw-purple/20 transition">
+                    View improvement PR →
+                  </a>
+                )}
               </div>
-              <p className={`text-[9px] ${costColor}`}>
-                ~{maxLogs} conversation{maxLogs !== 1 ? 's' : ''} · {costLabel}
-              </p>
-              <p className="text-[9px] text-gray-400 leading-snug">
-                Fires automatically on the next eval run. More conversations = deeper analysis but higher LLM cost.
-              </p>
-            </div>
+            )
           )}
 
-          {/* Manual: show run status */}
-          {!run ? (
-            isAuto
-              ? <p className="text-[10px] text-gray-400 italic">Waiting for next eval to trigger analysis.</p>
-              : <p className="text-[10px] text-gray-400 italic">No run yet — click ▶ above to trigger.</p>
-          ) : (
-            <div className="space-y-1">
-              <p className="text-[10px] text-gray-600">
-                {run.status !== 'completed' ? 'Analysing eval results…' :
-                 run.conclusion === 'success' ? '✓ Analysis complete' : '✗ Analysis failed'}
+          {/* Auto: mockup for future product */}
+          {isAuto && (
+            <div className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50/60 px-3 py-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold tracking-wider text-gray-400 uppercase">Preview</span>
+                <span className="text-[10px] text-gray-400">· Coming in a future release</span>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-gray-600">
+                    % of conversations used for self-improvement
+                  </label>
+                  <span className="text-xs font-bold text-vw-purple tabular-nums">{autoPercent}%</span>
+                </div>
+                <input
+                  type="range" min={5} max={100} step={5} value={autoPercent}
+                  onChange={e => onChangeAutoPercent(Number(e.target.value))}
+                  className="w-full accent-vw-purple"
+                />
+                <div className="flex justify-between text-[10px] text-gray-400">
+                  <span>5%</span>
+                  <span>100%</span>
+                </div>
+              </div>
+
+              <p className={`text-xs font-medium ${costColor}`}>{costLabel}</p>
+              <p className="text-[10px] text-gray-400 leading-relaxed">
+                When enabled, a sample of real end-user conversations will automatically feed the analysis pipeline — no manual trigger needed. A higher percentage gives richer signal but increases LLM cost per cycle.
               </p>
-              {improvePrLink && (
-                <a href={improvePrLink} target="_blank" rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-[10px] font-medium text-vw-purple bg-vw-purple-light px-2 py-1 rounded-full hover:bg-vw-purple/20 transition">
-                  View improvement PR →
-                </a>
-              )}
             </div>
           )}
         </div>
@@ -699,7 +711,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
 
   // Auto-analyse settings
   const [autoAnalyze, setAutoAnalyze] = useState(false)
-  const [maxLogs, setMaxLogs] = useState(5)
+  const [autoPercent, setAutoPercent] = useState(20)
 
   // Track last eval conclusion to detect transition to success for auto-dispatch
   const prevEvalConclusionRef = useRef<string | null | undefined>(undefined)
@@ -711,7 +723,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
     const prev = prevEvalConclusionRef.current
     const curr = evalRun?.conclusion
     if (autoAnalyze && prev !== undefined && prev !== 'success' && curr === 'success') {
-      dispatch('auto-analyze.yml', { agent_name: agentData.name, max_logs: String(maxLogs) })
+      dispatch('auto-analyze.yml', { agent_name: agentData.name })
     }
     prevEvalConclusionRef.current = curr
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -909,13 +921,13 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
           <AnalyseAndImproveSection
             comments={comments}
             workflowRuns={workflowRuns}
-            onRun={() => dispatch('auto-analyze.yml', { agent_name: agentData.name, max_logs: String(maxLogs) })}
+            onRun={() => dispatch('auto-analyze.yml', { agent_name: agentData.name })}
             runDispatching={!!dispatching['auto-analyze.yml']}
             collapsed={chatLogsOpen}
             isAuto={autoAnalyze}
-            maxLogs={maxLogs}
+            autoPercent={autoPercent}
             onToggleAuto={() => setAutoAnalyze(v => !v)}
-            onChangeMaxLogs={setMaxLogs}
+            onChangeAutoPercent={setAutoPercent}
           />
         </div>
       </div>
