@@ -1,5 +1,18 @@
 import { NextResponse } from 'next/server'
 import { ghGet, b64decode, OWNER, REPO } from '@/lib/github'
+import type { QualityScore } from '@/lib/types'
+
+function parseQualityScore(raw: string): { prompt: string; qualityScore: QualityScore | null } {
+  const m = raw.match(/<!--\s*QUALITY_SCORE\s*([\s\S]*?)-->/)
+  if (!m) return { prompt: raw, qualityScore: null }
+  try {
+    const qualityScore = JSON.parse(m[1].trim()) as QualityScore
+    const prompt = raw.replace(/<!--\s*QUALITY_SCORE\s*[\s\S]*?-->\n?/, '').trimStart()
+    return { prompt, qualityScore }
+  } catch {
+    return { prompt: raw, qualityScore: null }
+  }
+}
 
 interface GHFile { content: string; sha: string }
 interface GHContent { name: string; type: string }
@@ -21,7 +34,7 @@ export async function GET(
     const promptFile = await ghGet<GHFile>(
       `/repos/${OWNER}/${REPO}/contents/agents/${name}/system-prompt.md`,
     )
-    const prompt = b64decode(promptFile.content)
+    const { prompt, qualityScore } = parseQualityScore(b64decode(promptFile.content))
 
     // Skills directory (optional)
     let skills: string[] = []
@@ -58,6 +71,7 @@ export async function GET(
       prNumber: activePr?.number ?? null,
       prBranch: activePr?.head.ref ?? null,
       prHeadSha: activePr?.head.sha ?? null,
+      qualityScore,
     })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })

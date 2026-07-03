@@ -17,7 +17,7 @@ export async function ghGet<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function ghPost<T>(path: string, body: unknown): Promise<T> {
+export async function ghPost<T = void>(path: string, body: unknown): Promise<T | void> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: headers(),
@@ -26,6 +26,7 @@ export async function ghPost<T>(path: string, body: unknown): Promise<T> {
   if (!res.ok) {
     throw new Error(`GitHub POST ${path} → ${res.status}: ${await res.text()}`)
   }
+  if (res.status === 204) return
   return res.json() as Promise<T>
 }
 

@@ -34,6 +34,12 @@ on:
     paths:
       - "agents/*/system-prompt.md"
       - "agents/*/skills/**/*.md"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or SHA to verify (defaults to main)"
+        required: false
+        default: "main"
 
 permissions:
   contents: write   # needed to commit auto-remediation patches

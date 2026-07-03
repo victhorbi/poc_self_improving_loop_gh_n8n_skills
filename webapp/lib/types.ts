@@ -14,6 +14,17 @@ export interface WorkflowRun {
   workflowType: WorkflowType
 }
 
+export interface QualityScore {
+  model?: string
+  total_games?: number
+  valid_games?: number
+  errored_games?: number
+  successful_games?: number
+  success_rate?: number
+  avg_iterations?: number
+  [key: string]: unknown
+}
+
 export interface AgentData {
   name: string
   prompt: string
@@ -22,6 +33,7 @@ export interface AgentData {
   prNumber: number | null
   prBranch: string | null
   prHeadSha: string | null
+  qualityScore: QualityScore | null
 }
 
 export interface SkillContent {

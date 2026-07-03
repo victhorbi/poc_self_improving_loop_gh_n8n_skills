@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ghGet, OWNER, REPO, WORKFLOW_TYPE_MAP } from '@/lib/github'
+import { ghGet, ghPost, OWNER, REPO, WORKFLOW_TYPE_MAP } from '@/lib/github'
 
 interface GHRun {
   id: number
@@ -37,6 +37,16 @@ export async function GET(req: Request) {
     }))
 
     return NextResponse.json(mapped)
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 })
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const { workflow, ref } = await req.json() as { workflow: string; ref: string }
+    await ghPost(`/repos/${OWNER}/${REPO}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`, { ref })
+    return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
