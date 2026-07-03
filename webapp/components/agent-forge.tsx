@@ -238,7 +238,7 @@ function parseVerifyComment(body: string): VerifyRow[] | null {
   if (!body.includes('Static Verification Report')) return null
   const rows: VerifyRow[] = []
   for (const line of body.split('\n')) {
-    const m = line.match(/\|\s*`(P\d+)`\s*\|\s*([^|]+)\|\s*(✅|⚠️|❌|➖)\s*(PASS|WARN|FAIL|N\/A)\s*\|\s*([^|]+)\|/)
+    const m = line.match(/\|\s*`(P\d+)[^`]*`\s*\|\s*([^|]+)\|\s*(✅|⚠️|❌|➖)\s*(PASS|WARN|FAIL|N\/A)\s*\|\s*([^|]+)\|/)
     if (m) rows.push({ rule: m[1], name: m[2].trim(), status: m[4] as VerifyRow['status'], finding: m[5].trim() })
   }
   return rows.length > 0 ? rows : null
@@ -276,6 +276,7 @@ function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, app
   const [remediatedPrompt, setRemediatedPrompt] = useState<string | null>(null)
   const [loadingDiff, setLoadingDiff] = useState(false)
   const [showDiff, setShowDiff] = useState(false)
+  const [expandedRule, setExpandedRule] = useState<string | null>(null)
 
   const verifyComment = comments
     .filter(c => c.body.includes('Static Verification Report'))
@@ -306,21 +307,38 @@ function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, app
         <div className="space-y-0.5 mt-1">
           {FORMAL_CHECKS.map(check => {
             const result = rowMap.get(check.rule)
+            const isExpanded = expandedRule === check.rule
+            const hasFinding = result?.finding && result.finding !== '—'
+            const clickable = !!result
             return (
-              <div key={check.rule} className="flex items-start gap-2 px-2 py-1 rounded-lg hover:bg-gray-50">
-                <span className="font-mono text-[10px] text-gray-400 w-7 flex-shrink-0 mt-0.5">{check.rule}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-gray-700 leading-tight">{check.short}</p>
-                  {result?.finding && result.finding !== '—' && (
-                    <p className="text-[10px] text-gray-400 truncate mt-0.5" title={result.finding}>{result.finding}</p>
+              <div key={check.rule}>
+                <div
+                  onClick={() => clickable && setExpandedRule(isExpanded ? null : check.rule)}
+                  className={`flex items-start gap-2 px-2 py-1 rounded-lg ${clickable ? 'cursor-pointer hover:bg-gray-50' : ''} ${isExpanded ? 'bg-gray-50' : ''}`}
+                >
+                  <span className="font-mono text-[10px] text-gray-400 w-7 flex-shrink-0 mt-0.5">{check.rule}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-700 leading-tight">{check.short}</p>
+                    {!isExpanded && hasFinding && (
+                      <p className="text-[10px] text-gray-400 truncate mt-0.5">{result!.finding}</p>
+                    )}
+                  </div>
+                  {result ? (
+                    <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_CHIP[result.status]}`}>
+                      {STATUS_ICON[result.status]} {result.status}
+                    </span>
+                  ) : (
+                    <span className="flex-shrink-0 text-[9px] text-gray-300 w-10 text-center">—</span>
                   )}
                 </div>
-                {result ? (
-                  <span className={`flex-shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${STATUS_CHIP[result.status]}`}>
-                    {STATUS_ICON[result.status]} {result.status}
-                  </span>
-                ) : (
-                  <span className="flex-shrink-0 text-[9px] text-gray-300 w-10 text-center">—</span>
+                {isExpanded && hasFinding && (
+                  <div className={`mx-2 mb-1 px-2 py-1.5 rounded-b-lg text-[10px] leading-relaxed border-l-2 ${
+                    result!.status === 'FAIL' ? 'border-red-300 bg-red-50 text-red-800' :
+                    result!.status === 'WARN' ? 'border-amber-300 bg-amber-50 text-amber-800' :
+                    'border-gray-200 bg-gray-50 text-gray-600'
+                  }`}>
+                    {result!.finding}
+                  </div>
                 )}
               </div>
             )
@@ -619,7 +637,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
       const res = await fetch('/api/workflows', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflow, ref: agentData.prBranch ?? 'main', inputs }),
+        body: JSON.stringify({ workflow, ref: 'main', inputs }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) setDispatchMsg({ ok: false, text: data.error ?? `HTTP ${res.status}` })
@@ -635,8 +653,8 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
     setDispatchMsg(null)
     const agent = agentData.name
 
-    // 1. Verify — always
-    dispatch('verify-prompt.yml', { agent })
+    // 1. Verify — always; pass PR branch so workflow checks out the right code
+    dispatch('verify-prompt.yml', { agent, ref: agentData.prBranch ?? 'main' })
 
     // 2. Check webhook before running eval
     const { configured: hasWebhook } = await fetch(`/api/agents/${agent}/webhook-status`)
@@ -728,7 +746,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
           workflowRuns={workflowRuns}
           onApplyChanges={onApplyVerifyChanges}
           applyLoading={applyLoading}
-          onRun={() => dispatch('verify-prompt.yml', { agent: agentData.name })}
+          onRun={() => dispatch('verify-prompt.yml', { agent: agentData.name, ref: agentData.prBranch ?? 'main' })}
           runDispatching={!!dispatching['verify-prompt.yml']}
           collapsed={chatLogsOpen}
           currentPrompt={agentData.prompt}
