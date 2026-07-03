@@ -123,10 +123,10 @@ function SectionHeader({ label }: { label: string }) {
 }
 
 function CheckSectionTitle({
-  icon, label, light, run, onRun, running, onToggle, isOpen,
+  icon, label, light, run, running, onToggle, isOpen,
 }: {
   icon: string; label: string; light: TrafficLight; run?: WorkflowRun
-  onRun?: () => void; running: boolean; onToggle?: () => void; isOpen?: boolean
+  running: boolean; onToggle?: () => void; isOpen?: boolean
 }) {
   return (
     <div
@@ -144,18 +144,14 @@ function CheckSectionTitle({
           {timeAgo(run.created_at)}
         </a>
       )}
-      {onRun && (
-      <button
-        onClick={e => { e.stopPropagation(); onRun() }}
-        disabled={running}
-        title="Run this check"
-        className="w-5 h-5 flex items-center justify-center rounded text-gray-400 hover:text-vw-purple hover:bg-vw-purple-light transition disabled:opacity-40"
-      >
-        ▶
-      </button>
-      )}
       {onToggle !== undefined && (
-        <span className={`text-gray-400 text-xs transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>▾</span>
+        <button
+          onClick={e => { e.stopPropagation(); onToggle() }}
+          className="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+          aria-label={isOpen ? 'Collapse' : 'Expand'}
+        >
+          <span className={`text-base leading-none transition-transform duration-200 inline-block ${isOpen ? 'rotate-180' : ''}`}>▾</span>
+        </button>
       )}
     </div>
   )
@@ -270,9 +266,9 @@ const FORMAL_CHECKS = [
   { rule: 'P13', name: 'LIABILITY_PROTECTION',   short: 'Disclaimers in advisory domains' },
 ] as const
 
-function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, applyLoading, onRun, runDispatching, collapsed, currentPrompt, onLoadRemediation }: {
-  comments: PRComment[]; workflowRuns: WorkflowRun[]; onApplyChanges: () => void
-  applyLoading: boolean; onRun: () => void; runDispatching: boolean; collapsed?: boolean
+function FormalVerificationSection({ comments, workflowRuns, onRun, runDispatching, isOpen, onToggle, currentPrompt, onLoadRemediation }: {
+  comments: PRComment[]; workflowRuns: WorkflowRun[]
+  onRun: () => void; runDispatching: boolean; isOpen: boolean; onToggle: () => void
   currentPrompt: string; onLoadRemediation: () => Promise<string | null>
 }) {
   const [remediatedPrompt, setRemediatedPrompt] = useState<string | null>(null)
@@ -304,8 +300,8 @@ function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, app
 
   return (
     <div className="pb-4 border-b border-gray-100">
-      <CheckSectionTitle icon="🔍" label="Formal Verification" light={light} run={verifyRun} onRun={onRun} running={runDispatching} />
-      {!collapsed && (
+      <CheckSectionTitle icon="🔍" label="Formal Verification" light={light} run={verifyRun} running={runDispatching} onToggle={onToggle} isOpen={isOpen} />
+      {isOpen && (
         <div className="space-y-0.5 mt-1">
           {FORMAL_CHECKS.map(check => {
             const result = rowMap.get(check.rule)
@@ -359,21 +355,12 @@ function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, app
                   )}
                 </div>
                 <div className="flex gap-1 flex-shrink-0">
-                  {!showDiff && (
-                    <button onClick={handleViewChanges} disabled={loadingDiff}
-                      className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-semibold rounded hover:bg-amber-200 transition disabled:opacity-50">
-                      {loadingDiff ? '…' : 'View Changes'}
-                    </button>
-                  )}
-                  {showDiff && (
-                    <button onClick={() => setShowDiff(false)}
-                      className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-semibold rounded hover:bg-amber-200 transition">
-                      Hide
-                    </button>
-                  )}
-                  <button onClick={onApplyChanges} disabled={applyLoading}
-                    className="px-2 py-0.5 bg-vw-purple text-white text-[9px] font-semibold rounded hover:bg-vw-purple-dark transition disabled:opacity-50">
-                    {applyLoading ? '…' : 'Apply →'}
+                  <button
+                    onClick={showDiff ? () => setShowDiff(false) : handleViewChanges}
+                    disabled={loadingDiff}
+                    className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 text-[9px] font-semibold rounded hover:bg-amber-200 transition disabled:opacity-50"
+                  >
+                    {loadingDiff ? '…' : showDiff ? 'Hide diff' : 'View diff'}
                   </button>
                 </div>
               </div>
@@ -402,6 +389,14 @@ function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, app
               )}
             </div>
           )}
+          <div className="mt-3 pt-2 border-t border-gray-100">
+            <button
+              onClick={onRun} disabled={runDispatching}
+              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-vw-purple-light hover:text-vw-purple hover:border-vw-purple/30 transition disabled:opacity-40"
+            >
+              {runDispatching ? <><Spinner className="w-3 h-3" /> Running…</> : <>▶ Run</>}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -410,8 +405,9 @@ function FormalVerificationSection({ comments, workflowRuns, onApplyChanges, app
 
 // ── Quality check: Simulated Users ───────────────────────────────────────────
 
-function SimulatedUsersSection({ agentName, onRun, runDispatching, collapsed }: {
-  agentName: string; onRun: () => void; runDispatching: boolean; collapsed?: boolean
+function SimulatedUsersSection({ agentName, onRun, runDispatching, isOpen, onToggle, numTests, onNumTestsChange }: {
+  agentName: string; onRun: () => void; runDispatching: boolean; isOpen: boolean; onToggle: () => void
+  numTests: number; onNumTestsChange: (n: number) => void
 }) {
   const [status, setStatus] = useState<{ exists: boolean; count: number | null } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -429,19 +425,37 @@ function SimulatedUsersSection({ agentName, onRun, runDispatching, collapsed }: 
 
   return (
     <div className="pb-4 border-b border-gray-100">
-      <CheckSectionTitle icon="👥" label="Simulated Users" light={light} onRun={onRun} running={runDispatching} />
-      {!collapsed && (
-        <div className="pl-5">
+      <CheckSectionTitle icon="👥" label="Simulated Users" light={light} running={runDispatching} onToggle={onToggle} isOpen={isOpen} />
+      {isOpen && (
+        <div className="pl-5 space-y-2">
           {loading ? (
             <div className="flex items-center gap-1.5 text-xs text-gray-400"><Spinner className="w-3 h-3" /> Checking…</div>
           ) : status?.exists ? (
             <p className="text-xs text-gray-600">
-              ✅ Eval set found
-              {status.count !== null && <span className="ml-1 text-gray-400">· {status.count} test cases</span>}
+              {status.count !== null ? <>✅ <span className="font-medium">{status.count}</span><span className="text-gray-400"> · Simulated users available</span></> : '✅ Eval set found'}
             </p>
           ) : (
             <p className="text-xs text-gray-400 italic">No eval set in repo — run to generate.</p>
           )}
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-600 mb-1">
+              Number of simulated users
+              <span className="ml-1 text-gray-400 font-normal">— eval cases to generate</span>
+            </label>
+            <input
+              type="number" min={1} max={100} value={numTests}
+              onChange={e => onNumTestsChange(Math.max(1, Number(e.target.value)))}
+              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-vw-purple/30 focus:border-vw-purple"
+            />
+          </div>
+          <div className="pt-2 border-t border-gray-100">
+            <button
+              onClick={onRun} disabled={runDispatching}
+              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-vw-purple-light hover:text-vw-purple hover:border-vw-purple/30 transition disabled:opacity-40"
+            >
+              {runDispatching ? <><Spinner className="w-3 h-3" /> Running…</> : <>▶ Run</>}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -450,9 +464,12 @@ function SimulatedUsersSection({ agentName, onRun, runDispatching, collapsed }: 
 
 // ── Quality check: Chat Logs ──────────────────────────────────────────────────
 
-function ChatLogsSection({ agentName, prBranch, workflowRuns, onRun, runDispatching, open, onToggle }: {
+function ChatLogsSection({ agentName, prBranch, workflowRuns, onRun, runDispatching, open, onToggle, minSuccessRate, onMinSuccessRateChange, maxAvgIter, onMaxAvgIterChange, thresholdsUsed }: {
   agentName: string; prBranch: string | null; workflowRuns: WorkflowRun[]
   onRun: () => void; runDispatching: boolean; open: boolean; onToggle: () => void
+  minSuccessRate: number; onMinSuccessRateChange: (n: number) => void
+  maxAvgIter: number; onMaxAvgIterChange: (n: number) => void
+  thresholdsUsed?: { min_success_rate: number; max_avg_iterations: number } | null
 }) {
   const [logFiles, setLogFiles] = useState<string[]>([])
   const [selectedLog, setSelectedLog] = useState<string | null>(null)
@@ -502,12 +519,42 @@ function ChatLogsSection({ agentName, prBranch, workflowRuns, onRun, runDispatch
     <div className="pb-4 border-b border-gray-100">
       <CheckSectionTitle
         icon="💬" label="Chat Logs" light={light} run={evalRun}
-        onRun={onRun} running={runDispatching}
+        running={runDispatching}
         onToggle={onToggle} isOpen={open}
       />
 
       {open && (
         <div className="mt-1">
+          {/* Eval run settings */}
+          <div className="pl-5 space-y-2 mb-3">
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-600 mb-1">
+                Min success rate (%)
+                <span className="ml-1 text-gray-400 font-normal">— first-run pass threshold</span>
+              </label>
+              <input
+                type="number" min={0} max={100} value={minSuccessRate}
+                onChange={e => onMinSuccessRateChange(Math.max(0, Math.min(100, Number(e.target.value))))}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-vw-purple/30 focus:border-vw-purple"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-gray-600 mb-1">
+                Maximum number of messages to fulfill a request
+                <span className="ml-1 text-gray-400 font-normal">— beyond this is considered fail</span>
+              </label>
+              <input
+                type="number" min={1} max={100} value={maxAvgIter}
+                onChange={e => onMaxAvgIterChange(Math.max(1, Number(e.target.value)))}
+                className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-vw-purple/30 focus:border-vw-purple"
+              />
+            </div>
+            {thresholdsUsed && (
+              <p className="text-[9px] text-gray-400">
+                Last run used: ≥{thresholdsUsed.min_success_rate}% success, ≤{thresholdsUsed.max_avg_iterations} avg iter
+              </p>
+            )}
+          </div>
           {listLoading ? (
             <div className="flex items-center gap-1.5 text-xs text-gray-400 pl-5 py-1">
               <Spinner className="w-3 h-3" /> Loading logs…
@@ -573,6 +620,14 @@ function ChatLogsSection({ agentName, prBranch, workflowRuns, onRun, runDispatch
               )}
             </>
           )}
+          <div className="mt-3 pt-2 border-t border-gray-100">
+            <button
+              onClick={onRun} disabled={runDispatching}
+              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-vw-purple-light hover:text-vw-purple hover:border-vw-purple/30 transition disabled:opacity-40"
+            >
+              {runDispatching ? <><Spinner className="w-3 h-3" /> Running…</> : <>▶ Run</>}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -581,8 +636,8 @@ function ChatLogsSection({ agentName, prBranch, workflowRuns, onRun, runDispatch
 
 // ── Quality check: Analyse and Improve ───────────────────────────────────────
 
-function AnalyseAndImproveSection({ comments, workflowRuns, onRun, runDispatching, collapsed, isAuto, autoPercent, onToggleAuto, onChangeAutoPercent }: {
-  comments: PRComment[]; workflowRuns: WorkflowRun[]; onRun: () => void; runDispatching: boolean; collapsed?: boolean
+function AnalyseAndImproveSection({ comments, workflowRuns, onRun, runDispatching, isOpen, onToggle, isAuto, autoPercent, onToggleAuto, onChangeAutoPercent }: {
+  comments: PRComment[]; workflowRuns: WorkflowRun[]; onRun: () => void; runDispatching: boolean; isOpen: boolean; onToggle: () => void
   isAuto: boolean; autoPercent: number; onToggleAuto: () => void; onChangeAutoPercent: (n: number) => void
 }) {
   const run = workflowRuns.filter(r => r.workflowType === 'auto-analyze')
@@ -606,10 +661,11 @@ function AnalyseAndImproveSection({ comments, workflowRuns, onRun, runDispatchin
         label="Analyse and Improve"
         light={light}
         run={run}
-        onRun={isAuto ? undefined : onRun}
         running={runDispatching}
+        onToggle={onToggle}
+        isOpen={isOpen}
       />
-      {!collapsed && (
+      {isOpen && (
         <div className="pl-2 space-y-2.5 mt-1">
           {/* Manual / Auto toggle */}
           <div className="flex items-center gap-2">
@@ -682,6 +738,17 @@ function AnalyseAndImproveSection({ comments, workflowRuns, onRun, runDispatchin
               </p>
             </div>
           )}
+
+          {!isAuto && (
+            <div className="pt-2 border-t border-gray-100">
+              <button
+                onClick={onRun} disabled={runDispatching}
+                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-vw-purple-light hover:text-vw-purple hover:border-vw-purple/30 transition disabled:opacity-40"
+              >
+                {runDispatching ? <><Spinner className="w-3 h-3" /> Running…</> : <>▶ Run</>}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -690,15 +757,16 @@ function AnalyseAndImproveSection({ comments, workflowRuns, onRun, runDispatchin
 
 // ── Right sidebar: Quality Checks ────────────────────────────────────────────
 
-function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerifyChanges, applyLoading }: {
+function QualityChecksSidebar({ agentData, workflowRuns, comments }: {
   agentData: AgentData; workflowRuns: WorkflowRun[]; comments: PRComment[]
-  onApplyVerifyChanges: () => void; applyLoading: boolean
 }) {
   const [dispatching, setDispatching] = useState<Record<string, boolean>>({})
   const [dispatchMsg, setDispatchMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [formalVerOpen, setFormalVerOpen] = useState(true)
+  const [simulatedUsersOpen, setSimulatedUsersOpen] = useState(true)
   const [chatLogsOpen, setChatLogsOpen] = useState(false)
+  const [analyseOpen, setAnalyseOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(440)
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const dragRef = useRef<{ startX: number; startW: number } | null>(null)
 
   // Eval thresholds — initialize from last run's recorded thresholds if available
@@ -708,6 +776,9 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
   const [maxAvgIter, setMaxAvgIter] = useState<number>(
     agentData.qualityScore?.thresholds_used?.max_avg_iterations ?? 30
   )
+
+  // Simulated users count
+  const [numTests, setNumTests] = useState(10)
 
   // Auto-analyse settings
   const [autoAnalyze, setAutoAnalyze] = useState(false)
@@ -845,65 +916,25 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
       {/* Sections */}
       <div className="flex-1 overflow-y-auto p-4 space-y-0">
 
-        {/* Eval Settings */}
-        <div className="pb-4 border-b border-gray-100 mb-1">
-          <button
-            onClick={() => setSettingsOpen(v => !v)}
-            className="w-full flex items-center gap-2 text-[10px] font-semibold text-gray-500 uppercase tracking-[0.12em] hover:text-gray-700 transition mb-1"
-          >
-            <span className="flex-1 text-left">⚙ Eval Settings</span>
-            <span className={`transition-transform duration-150 ${settingsOpen ? 'rotate-180' : ''}`}>▾</span>
-          </button>
-          {settingsOpen && (
-            <div className="space-y-2 mt-2">
-              <div>
-                <label className="block text-[10px] font-semibold text-gray-600 mb-1">
-                  Min success rate (%)
-                  <span className="ml-1 text-gray-400 font-normal">— first-run pass threshold</span>
-                </label>
-                <input
-                  type="number" min={0} max={100} value={minSuccessRate}
-                  onChange={e => setMinSuccessRate(Math.max(0, Math.min(100, Number(e.target.value))))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-vw-purple/30 focus:border-vw-purple"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-semibold text-gray-600 mb-1">
-                  Maximum number of messages to fulfill a request
-                  <span className="ml-1 text-gray-400 font-normal">— beyond this is considered fail</span>
-                </label>
-                <input
-                  type="number" min={1} max={100} value={maxAvgIter}
-                  onChange={e => setMaxAvgIter(Math.max(1, Number(e.target.value)))}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-vw-purple/30 focus:border-vw-purple"
-                />
-              </div>
-              {agentData.qualityScore?.thresholds_used && (
-                <p className="text-[9px] text-gray-400">
-                  Last run used: ≥{agentData.qualityScore.thresholds_used.min_success_rate}% success, ≤{agentData.qualityScore.thresholds_used.max_avg_iterations} avg iter
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
         <FormalVerificationSection
           comments={comments}
           workflowRuns={workflowRuns}
-          onApplyChanges={onApplyVerifyChanges}
-          applyLoading={applyLoading}
           onRun={() => dispatch('verify-prompt.yml', { agent: agentData.name, ref: agentData.prBranch ?? 'main' })}
           runDispatching={!!dispatching['verify-prompt.yml']}
-          collapsed={chatLogsOpen}
+          isOpen={formalVerOpen}
+          onToggle={() => setFormalVerOpen(v => !v)}
           currentPrompt={agentData.prompt}
           onLoadRemediation={loadRemediatedPrompt}
         />
         <div className="pt-4">
           <SimulatedUsersSection
             agentName={agentData.name}
-            onRun={() => dispatch('generate-eval-set.yml')}
+            onRun={() => dispatch('generate-eval-set.yml', { agent_name: agentData.name, num_tests: String(numTests) })}
             runDispatching={!!dispatching['generate-eval-set.yml']}
-            collapsed={chatLogsOpen}
+            isOpen={simulatedUsersOpen}
+            onToggle={() => setSimulatedUsersOpen(v => !v)}
+            numTests={numTests}
+            onNumTestsChange={setNumTests}
           />
         </div>
         <div className="pt-4">
@@ -915,6 +946,11 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
             runDispatching={!!dispatching['agent-eval.yml']}
             open={chatLogsOpen}
             onToggle={() => setChatLogsOpen(v => !v)}
+            minSuccessRate={minSuccessRate}
+            onMinSuccessRateChange={setMinSuccessRate}
+            maxAvgIter={maxAvgIter}
+            onMaxAvgIterChange={setMaxAvgIter}
+            thresholdsUsed={agentData.qualityScore?.thresholds_used}
           />
         </div>
         <div className="pt-4">
@@ -923,7 +959,8 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
             workflowRuns={workflowRuns}
             onRun={() => dispatch('auto-analyze.yml', { agent_name: agentData.name })}
             runDispatching={!!dispatching['auto-analyze.yml']}
-            collapsed={chatLogsOpen}
+            isOpen={analyseOpen}
+            onToggle={() => setAnalyseOpen(v => !v)}
             isAuto={autoAnalyze}
             autoPercent={autoPercent}
             onToggleAuto={() => setAutoAnalyze(v => !v)}
@@ -1094,6 +1131,7 @@ export default function AgentForge() {
   const [agentLoading, setAgentLoading] = useState(false)
 
   const [promptDraft, setPromptDraft] = useState('')
+  const [committedPrompt, setCommittedPrompt] = useState('')
   const [skillDrafts, setSkillDrafts] = useState<Record<string, string>>({})
   const [skillModal, setSkillModal] = useState<{ name: string; content: string } | null>(null)
   const [skillLoadingName, setSkillLoadingName] = useState<string | null>(null)
@@ -1119,7 +1157,7 @@ export default function AgentForge() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const isDirty = agentData !== null && (
-    promptDraft !== agentData.prompt || Object.keys(skillDrafts).length > 0
+    promptDraft !== committedPrompt || Object.keys(skillDrafts).length > 0
   )
 
   const loadAgents = useCallback(async () => {
@@ -1138,7 +1176,19 @@ export default function AgentForge() {
     try {
       const data: AgentData = await fetch(`/api/agents/${name}`).then(r => r.json())
       setAgentData(data)
-      setPromptDraft(data.prompt)
+
+      // If a PR branch exists, show the branch version in the editor (not main)
+      let editorPrompt = data.prompt
+      if (data.prBranch) {
+        try {
+          const branchData: AgentData = await fetch(
+            `/api/agents/${name}?ref=${encodeURIComponent(data.prBranch)}`
+          ).then(r => r.json())
+          editorPrompt = branchData.prompt
+        } catch { /* fall back to main */ }
+      }
+      setPromptDraft(editorPrompt)
+      setCommittedPrompt(editorPrompt)
 
       const branch = data.prBranch ?? 'main'
       const runsData = await fetch(`/api/workflows?branch=${encodeURIComponent(branch)}`).then(r => r.json()).catch(() => [])
@@ -1270,17 +1320,6 @@ export default function AgentForge() {
       {/* Top bar */}
       <header className="flex items-center gap-4 px-5 h-14 border-b border-gray-200 flex-shrink-0">
         <VeWorldLogo />
-        <div className="flex-1" />
-        {selectedAgent && agentData && (
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-vw-purple flex items-center justify-center text-white text-xs font-bold select-none">
-              {displayName.slice(0, 2).toUpperCase()}
-            </div>
-            <span className="text-sm font-medium text-gray-800">{displayName}</span>
-            <span className="text-gray-300">·</span>
-            <StatusPill label={hasPr ? 'PR open' : 'Draft'} variant={hasPr ? 'live' : 'draft'} />
-          </div>
-        )}
         <div className="flex-1" />
         <div className="flex items-center gap-2">
           {isDirty && (
@@ -1658,8 +1697,6 @@ export default function AgentForge() {
             agentData={agentData}
             workflowRuns={workflowRuns}
             comments={comments}
-            onApplyVerifyChanges={handleApplyVerifyChanges}
-            applyLoading={applyLoading}
           />
         )}
         </>

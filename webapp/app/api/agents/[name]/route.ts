@@ -24,15 +24,19 @@ interface GHPR {
 interface GHPRFile { filename: string }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: { name: string } },
 ) {
   try {
     const { name } = params
+    const ref = new URL(req.url).searchParams.get('ref') ??
+                new URL(req.url).searchParams.get('branch') ??
+                undefined
+    const refParam = ref ? `?ref=${encodeURIComponent(ref)}` : ''
 
     // System prompt
     const promptFile = await ghGet<GHFile>(
-      `/repos/${OWNER}/${REPO}/contents/agents/${name}/system-prompt.md`,
+      `/repos/${OWNER}/${REPO}/contents/agents/${name}/system-prompt.md${refParam}`,
     )
     const { prompt, qualityScore } = parseQualityScore(b64decode(promptFile.content))
 
@@ -40,7 +44,7 @@ export async function GET(
     let skills: string[] = []
     try {
       const dir = await ghGet<GHContent[]>(
-        `/repos/${OWNER}/${REPO}/contents/agents/${name}/skills`,
+        `/repos/${OWNER}/${REPO}/contents/agents/${name}/skills${refParam}`,
       )
       skills = dir.filter(f => f.type === 'file' && f.name.endsWith('.md')).map(f => f.name)
     } catch {
@@ -57,7 +61,10 @@ export async function GET(
       const files = await ghGet<GHPRFile[]>(
         `/repos/${OWNER}/${REPO}/pulls/${pr.number}/files`,
       ).catch(() => [] as GHPRFile[])
-      if (files.some(f => f.filename.startsWith(`agents/${name}/`))) {
+      if (files.some(f =>
+        f.filename === `agents/${name}/system-prompt.md` ||
+        f.filename.startsWith(`agents/${name}/skills/`)
+      )) {
         activePr = pr
         break
       }
