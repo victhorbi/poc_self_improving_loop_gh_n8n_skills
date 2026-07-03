@@ -869,8 +869,8 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
               </div>
               <div>
                 <label className="block text-[10px] font-semibold text-gray-600 mb-1">
-                  Target max avg iterations
-                  <span className="ml-1 text-gray-400 font-normal">— lower = faster agent</span>
+                  Maximum number of messages to fulfill a request
+                  <span className="ml-1 text-gray-400 font-normal">— beyond this is considered fail</span>
                 </label>
                 <input
                   type="number" min={1} max={100} value={maxAvgIter}
