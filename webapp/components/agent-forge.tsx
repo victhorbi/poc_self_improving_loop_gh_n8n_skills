@@ -591,7 +591,7 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
             onClick={() => {
               dispatch('verify-prompt.yml')
               dispatch('agent-eval.yml')
-              dispatch('analyze-and-improve.yml')
+              dispatch('auto-analyze.yml')
             }}
             title="Run all checks"
             className="flex items-center gap-1 px-2 py-1 text-[10px] font-semibold text-vw-purple bg-vw-purple-light rounded-lg hover:bg-vw-purple/20 transition"
@@ -640,8 +640,8 @@ function QualityChecksSidebar({ agentData, workflowRuns, comments, onApplyVerify
           <AnalyseAndImproveSection
             comments={comments}
             workflowRuns={workflowRuns}
-            onRun={() => dispatch('analyze-and-improve.yml')}
-            runDispatching={!!dispatching['analyze-and-improve.yml']}
+            onRun={() => dispatch('auto-analyze.yml')}
+            runDispatching={!!dispatching['auto-analyze.yml']}
             collapsed={chatLogsOpen}
           />
         </div>
