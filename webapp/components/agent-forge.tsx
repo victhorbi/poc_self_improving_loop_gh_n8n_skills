@@ -1097,6 +1097,8 @@ export default function AgentForge() {
   const [newAgentName, setNewAgentName] = useState('')
   const [newAgentPrompt, setNewAgentPrompt] = useState('You are a helpful agent.')
   const [createError, setCreateError] = useState<string | null>(null)
+  const [newSkillDrafts, setNewSkillDrafts] = useState<Record<string, string>>({})
+  const [newAddingSkill, setNewAddingSkill] = useState<string | null>(null)
 
   const [showPublishModal, setShowPublishModal] = useState(false)
   const [publishLoading, setPublishLoading] = useState(false)
@@ -1210,7 +1212,7 @@ export default function AgentForge() {
     setCreateError(null)
     try {
       const payload: CreatePrPayload = {
-        agentName: slug, promptContent: newAgentPrompt, skillUpdates: {},
+        agentName: slug, promptContent: newAgentPrompt, skillUpdates: newSkillDrafts,
         maxIterations, numTests, existingPrBranch: null,
       }
       const result: CreatePrResult = await fetch('/api/pr', {
@@ -1223,6 +1225,8 @@ export default function AgentForge() {
       setActiveTab('Configure')
       setNewAgentName('')
       setNewAgentPrompt('You are a helpful agent.')
+      setNewSkillDrafts({})
+      setNewAddingSkill(null)
       window.open(
         `https://github.com/${process.env.NEXT_PUBLIC_GITHUB_OWNER}/${process.env.NEXT_PUBLIC_GITHUB_REPO}/pull/${result.prNumber}`,
         '_blank',
@@ -1393,11 +1397,57 @@ export default function AgentForge() {
                 <p className="mt-1 text-xs text-gray-400 text-right">{newAgentPrompt.length.toLocaleString()} chars</p>
               </div>
 
+              {/* Skills */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-2">Skills</label>
+                <div className="flex flex-wrap gap-2 items-center">
+                  {Object.keys(newSkillDrafts).map(skill => (
+                    <button key={skill}
+                      onClick={() => setSkillModal({ name: skill, content: newSkillDrafts[skill] })}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition border bg-vw-purple text-white border-vw-purple">
+                      <span>⚡</span>
+                      {skill.replace('.md', '')}
+                      <span className="text-white/70 text-[10px]">added</span>
+                    </button>
+                  ))}
+                  {newAddingSkill !== null ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        autoFocus
+                        value={newAddingSkill}
+                        onChange={e => setNewAddingSkill(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            const raw = newAddingSkill.trim()
+                            if (!raw) { setNewAddingSkill(null); return }
+                            const name = raw.endsWith('.md') ? raw : `${raw}.md`
+                            setNewAddingSkill(null)
+                            setSkillModal({ name, content: '' })
+                          }
+                          if (e.key === 'Escape') setNewAddingSkill(null)
+                        }}
+                        placeholder="skill-name"
+                        className="px-2.5 py-1.5 text-xs border border-vw-purple/40 rounded-full focus:outline-none focus:ring-1 focus:ring-vw-purple/30 w-32 text-gray-700"
+                      />
+                      <span className="text-[10px] text-gray-400">↵ confirm</span>
+                      <button onClick={() => setNewAddingSkill(null)} className="text-gray-400 hover:text-gray-600 text-xs leading-none">✕</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setNewAddingSkill('')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border-2 border-dashed border-gray-300 text-gray-400 hover:border-vw-purple hover:text-vw-purple transition"
+                    >
+                      + Add Skill
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* CTA */}
               <div className="flex items-center justify-between p-4 bg-vw-purple-light border border-vw-purple/20 rounded-xl">
                 <div>
                   <p className="text-sm font-semibold text-vw-purple">Ready to create?</p>
-                  <p className="text-xs text-vw-purple/70 mt-0.5">Opens a draft PR — add skills and refine the prompt from Configure.</p>
+                  <p className="text-xs text-vw-purple/70 mt-0.5">Opens a draft PR and triggers CI.</p>
                 </div>
                 <button
                   onClick={() => {
@@ -1618,10 +1668,17 @@ export default function AgentForge() {
         <PublishModal agentName={agentData.name} hasPr={hasPr} onClose={() => setShowPublishModal(false)}
           onConfirm={handlePublishConfirm} loading={publishLoading} />
       )}
-      {skillModal && agentData && (
-        <SkillModal agentName={agentData.name} skillName={skillModal.name} content={skillModal.content}
+      {skillModal && (activeTab === 'Create' || agentData) && (
+        <SkillModal agentName={activeTab === 'Create' ? (newAgentName.trim() || 'new-agent') : agentData!.name} skillName={skillModal.name} content={skillModal.content}
           loading={false} onClose={() => setSkillModal(null)}
-          onSave={content => { setSkillDrafts(prev => ({ ...prev, [skillModal.name]: content })); setSkillModal(null) }} />
+          onSave={content => {
+            if (activeTab === 'Create') {
+              setNewSkillDrafts(prev => ({ ...prev, [skillModal.name]: content }))
+            } else {
+              setSkillDrafts(prev => ({ ...prev, [skillModal.name]: content }))
+            }
+            setSkillModal(null)
+          }} />
       )}
     </div>
   )
