@@ -953,7 +953,12 @@ export default function AgentForge() {
   const [comments, setComments] = useState<PRComment[]>([])
   const [agentLights, setAgentLights] = useState<Record<string, TrafficLight>>({})
 
-  const [activeTab, setActiveTab] = useState<'Configure' | 'Preview'>('Configure')
+  const [activeTab, setActiveTab] = useState<'Create' | 'Configure' | 'Preview'>('Configure')
+
+  // Create tab state
+  const [newAgentName, setNewAgentName] = useState('')
+  const [newAgentPrompt, setNewAgentPrompt] = useState('You are a helpful agent.')
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const [showPublishModal, setShowPublishModal] = useState(false)
   const [publishLoading, setPublishLoading] = useState(false)
@@ -1059,6 +1064,36 @@ export default function AgentForge() {
     }
   }
 
+  const handleCreateAgent = async (maxIterations: number, numTests: number) => {
+    const slug = newAgentName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    if (!slug) { setCreateError('Agent name is required.'); return }
+    if (agents.includes(slug)) { setCreateError(`An agent named "${slug}" already exists.`); return }
+    setPublishLoading(true)
+    setCreateError(null)
+    try {
+      const payload: CreatePrPayload = {
+        agentName: slug, promptContent: newAgentPrompt, skillUpdates: {},
+        maxIterations, numTests, existingPrBranch: null,
+      }
+      const result: CreatePrResult = await fetch('/api/pr', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).then(r => r.json())
+      setShowPublishModal(false)
+      await loadAgents()
+      setSelectedAgent(slug)
+      setActiveTab('Configure')
+      setNewAgentName('')
+      setNewAgentPrompt('You are a helpful agent.')
+      window.open(
+        `https://github.com/${process.env.NEXT_PUBLIC_GITHUB_OWNER}/${process.env.NEXT_PUBLIC_GITHUB_REPO}/pull/${result.prNumber}`,
+        '_blank',
+      )
+    } finally {
+      setPublishLoading(false)
+    }
+  }
+
   const handleApplyVerifyChanges = async () => {
     if (!agentData?.prBranch) return
     setApplyLoading(true)
@@ -1108,13 +1143,11 @@ export default function AgentForge() {
       <div className="flex border-b border-gray-200 px-5 flex-shrink-0">
         {(['Create', 'Configure', 'Preview'] as const).map(t => (
           <button key={t}
-            onClick={() => { if (t === 'Configure' || t === 'Preview') setActiveTab(t) }}
+            onClick={() => setActiveTab(t)}
             className={`px-4 py-3 text-sm font-medium border-b-2 transition ${
               t === activeTab
                 ? 'border-gray-900 text-gray-900'
-                : t === 'Create'
-                  ? 'border-transparent text-gray-300 cursor-default'
-                  : 'border-transparent text-gray-400 hover:text-gray-600 cursor-pointer'
+                : 'border-transparent text-gray-400 hover:text-gray-600 cursor-pointer'
             }`}>
             {t}
           </button>
@@ -1176,7 +1209,74 @@ export default function AgentForge() {
           )}
         </aside>
 
-        {activeTab === 'Preview' ? (
+        {activeTab === 'Create' ? (
+          /* Create tab */
+          <main className="flex-1 overflow-y-auto">
+            <div className="max-w-2xl mx-auto px-6 py-10 space-y-8">
+              <div>
+                <p className="text-[10px] font-semibold tracking-[0.15em] text-vw-purple uppercase mb-1">NEW AGENT</p>
+                <h1 className="text-2xl font-bold text-gray-900">Create an agent</h1>
+                <p className="text-sm text-gray-400 mt-1">Give it a name and a starting prompt. Skills can be added later.</p>
+              </div>
+
+              {/* Agent name */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-2">
+                  Agent name <RequiredBadge />
+                </label>
+                <input
+                  type="text"
+                  value={newAgentName}
+                  onChange={e => { setNewAgentName(e.target.value); setCreateError(null) }}
+                  placeholder="e.g. my-agent"
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-vw-purple/30 focus:border-vw-purple transition bg-white"
+                />
+                {newAgentName.trim() && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Slug: <span className="font-mono">{newAgentName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}</span>
+                  </p>
+                )}
+                {createError && <p className="mt-1 text-xs text-red-500">{createError}</p>}
+              </div>
+
+              {/* System prompt */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-2">
+                  System prompt <RequiredBadge />
+                </label>
+                <textarea
+                  value={newAgentPrompt}
+                  onChange={e => setNewAgentPrompt(e.target.value)}
+                  spellCheck={false}
+                  rows={8}
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm font-mono text-gray-800 resize-none focus:outline-none focus:ring-2 focus:ring-vw-purple/30 focus:border-vw-purple transition bg-white leading-relaxed"
+                  placeholder="You are a helpful agent."
+                />
+                <p className="mt-1 text-xs text-gray-400 text-right">{newAgentPrompt.length.toLocaleString()} chars</p>
+              </div>
+
+              {/* CTA */}
+              <div className="flex items-center justify-between p-4 bg-vw-purple-light border border-vw-purple/20 rounded-xl">
+                <div>
+                  <p className="text-sm font-semibold text-vw-purple">Ready to create?</p>
+                  <p className="text-xs text-vw-purple/70 mt-0.5">Opens a draft PR — add skills and refine the prompt from Configure.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const slug = newAgentName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+                    if (!slug) { setCreateError('Agent name is required.'); return }
+                    if (agents.includes(slug)) { setCreateError(`An agent named "${slug}" already exists.`); return }
+                    setShowPublishModal(true)
+                  }}
+                  disabled={!newAgentName.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-vw-purple text-white text-sm font-semibold rounded-lg hover:bg-vw-purple-dark transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Create draft PR →
+                </button>
+              </div>
+            </div>
+          </main>
+        ) : activeTab === 'Preview' ? (
           /* Preview tab: live chat */
           <main className="flex-1 overflow-hidden">
             {!selectedAgent ? (
@@ -1367,7 +1467,16 @@ export default function AgentForge() {
       </div>
 
       {/* Modals */}
-      {showPublishModal && agentData && (
+      {showPublishModal && activeTab === 'Create' && (
+        <PublishModal
+          agentName={newAgentName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}
+          hasPr={false}
+          onClose={() => setShowPublishModal(false)}
+          onConfirm={handleCreateAgent}
+          loading={publishLoading}
+        />
+      )}
+      {showPublishModal && activeTab !== 'Create' && agentData && (
         <PublishModal agentName={agentData.name} hasPr={hasPr} onClose={() => setShowPublishModal(false)}
           onConfirm={handlePublishConfirm} loading={publishLoading} />
       )}
