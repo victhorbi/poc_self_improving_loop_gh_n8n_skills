@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server'
-
-const OWNER = process.env.GITHUB_OWNER ?? ''
-const REPO = process.env.GITHUB_REPO ?? ''
+import { ghGetVariable, OWNER, REPO } from '@/lib/github'
 
 function extractOutput(data: unknown): string | null {
   if (typeof data === 'string') return data
@@ -18,6 +16,15 @@ function extractOutput(data: unknown): string | null {
   return null
 }
 
+async function resolveWebhookUrl(name: string): Promise<string | null> {
+  const perAgentKey = `N8N_AGENT_${name.replace(/-/g, '_').toUpperCase()}_WEBHOOK_URL`
+  // 1. Local env (dev override)
+  if (process.env[perAgentKey]) return process.env[perAgentKey]!
+  if (process.env.N8N_AGENT_WEBHOOK_URL) return process.env.N8N_AGENT_WEBHOOK_URL!
+  // 2. GitHub repository variables (set by provision workflow)
+  return (await ghGetVariable(perAgentKey)) ?? (await ghGetVariable('N8N_AGENT_WEBHOOK_URL'))
+}
+
 export async function POST(
   req: Request,
   { params }: { params: { name: string } },
@@ -26,12 +33,11 @@ export async function POST(
     const { message, sessionId } = await req.json() as { message: string; sessionId: string }
     const { name } = params
 
-    const perAgentKey = `N8N_AGENT_${name.replace(/-/g, '_').toUpperCase()}_WEBHOOK_URL`
-    const webhookUrl = process.env[perAgentKey] ?? process.env.N8N_AGENT_WEBHOOK_URL
+    const webhookUrl = await resolveWebhookUrl(name)
 
     if (!webhookUrl) {
       return NextResponse.json(
-        { error: `No webhook URL configured. Set ${perAgentKey} or N8N_AGENT_WEBHOOK_URL in .env.local` },
+        { error: `No webhook URL found for agent "${name}". Set N8N_AGENT_${name.toUpperCase()}_WEBHOOK_URL as a GitHub variable or in .env.local.` },
         { status: 503 },
       )
     }

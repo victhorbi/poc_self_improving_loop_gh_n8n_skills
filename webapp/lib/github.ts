@@ -53,6 +53,23 @@ export function b64encode(s: string): string {
 export const OWNER = process.env.GITHUB_OWNER ?? ''
 export const REPO = process.env.GITHUB_REPO ?? ''
 
+// Cache variable lookups for 5 min to avoid hammering the API on every request
+const varCache = new Map<string, { value: string; expires: number }>()
+
+export async function ghGetVariable(name: string): Promise<string | null> {
+  const cached = varCache.get(name)
+  if (cached && cached.expires > Date.now()) return cached.value
+  try {
+    const data = await ghGet<{ value: string }>(
+      `/repos/${OWNER}/${REPO}/actions/variables/${encodeURIComponent(name)}`,
+    )
+    varCache.set(name, { value: data.value, expires: Date.now() + 5 * 60_000 })
+    return data.value
+  } catch {
+    return null
+  }
+}
+
 export const WORKFLOW_TYPE_MAP: Record<string, string> = {
   'Verify Prompt & Skills': 'verify',
   'Generate Eval Set': 'generate-eval-set',
