@@ -45,11 +45,18 @@ export function aggregate(
   if (results.length === 0) throw new Error("No eval results to aggregate");
 
   const errored = results.filter((r) => r.error !== undefined);
+  const skillErrors = results.filter((r) => r.skillError !== undefined);
   const valid = results.filter((r) => r.error === undefined);
 
   if (errored.length > 0) {
     console.error(
       `Errored games (${errored.length}): ${errored.map((r) => `#${r.id} ${r.error}`).join("; ")}`,
+    );
+  }
+  if (skillErrors.length > 0) {
+    console.error(
+      `Skill-error games (${skillErrors.length}) — agent failed to access skills:\n` +
+        skillErrors.map((r) => `  game #${r.id}: "${r.skillError}"`).join("\n"),
     );
   }
 
