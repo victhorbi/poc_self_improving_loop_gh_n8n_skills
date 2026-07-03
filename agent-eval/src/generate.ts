@@ -8,6 +8,7 @@ export interface GenerateConfig extends GithubCreds {
   openRouterApiKey: string;
   count: number;
   model: string;
+  force?: boolean;
 }
 
 function buildPrompt(systemMessage: string, count: number): string {
@@ -79,14 +80,27 @@ export async function generateEvalSet(cfg: GenerateConfig): Promise<boolean> {
   const evalSetPath = `${cfg.agentFolder}/evals/eval-set.json`;
   const promptPath = `${cfg.agentFolder}/system-prompt.md`;
 
-  // Idempotency check — skip if eval set already exists on this branch
-  try {
-    await getContent(cfg, evalSetPath, cfg.branch);
-    console.log(`eval-set.json already exists for ${cfg.agentFolder} — skipping generation.`);
-    return false;
-  } catch (e) {
-    if (!String(e).includes("404")) throw e;
-    // 404 → file doesn't exist yet, proceed
+  // Idempotency check — skip if eval set already exists, unless force flag is set.
+  // When forcing, we still fetch the existing SHA so the PUT can overwrite the file.
+  let existingSha: string | undefined;
+  if (!cfg.force) {
+    try {
+      await getContent(cfg, evalSetPath, cfg.branch);
+      console.log(`eval-set.json already exists for ${cfg.agentFolder} — skipping generation.`);
+      return false;
+    } catch (e) {
+      if (!String(e).includes("404")) throw e;
+      // 404 → file doesn't exist yet, proceed
+    }
+  } else {
+    console.log(`Force flag set — regenerating eval set for ${cfg.agentFolder}.`);
+    try {
+      const existing = await getContent(cfg, evalSetPath, cfg.branch);
+      existingSha = existing.sha;
+    } catch (e) {
+      if (!String(e).includes("404")) throw e;
+      // File doesn't exist yet — that's fine, putContent will create it
+    }
   }
 
   // Read system-prompt.md (strip QUALITY_SCORE header if present)
@@ -125,7 +139,7 @@ export async function generateEvalSet(cfg: GenerateConfig): Promise<boolean> {
     content: JSON.stringify(evals, null, 2),
     message: `chore: generate eval set for ${agentName} (${evals.length} cases) [auto-gen]`,
     branch: cfg.branch,
-    // no sha — always a new file at this point
+    sha: existingSha,
   });
 
   console.log(`✓ Committed ${evals.length} eval cases → ${evalSetPath}`);
