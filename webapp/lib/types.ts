@@ -22,6 +22,7 @@ export interface QualityScore {
   successful_games?: number
   success_rate?: number
   avg_iterations?: number
+  thresholds_used?: { min_success_rate: number; max_avg_iterations: number } | null
   [key: string]: unknown
 }
 
