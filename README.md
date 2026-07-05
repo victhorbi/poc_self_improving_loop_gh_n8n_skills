@@ -1,43 +1,53 @@
 # Agent Self-Improvement System
 
-A framework for building AI conversational agents that evaluate and improve themselves automatically. You write the initial agent definition; the system handles evaluation, scoring, and — over time — proposes its own improvements.
+A framework for building AI conversational agents that evaluate, verify, and improve themselves automatically. You write the initial agent definition; the system handles provisioning, evaluation, static safety verification, scoring, and — over time — proposes its own improvements.
 
-The Akinator agent in this repo is the reference implementation. The framework is agent-agnostic: add any agent under `agents/` and the full pipeline activates for it automatically.
+Includes a web UI (**AgentForge**) for managing agents, reviewing quality checks, and previewing live chat — with no manual n8n interaction required for day-to-day use.
+
+Three agents ship as reference implementations: **Akinator** (character-guessing game), **Novagirl**, and **B3mo**. The framework is agent-agnostic: add any agent under `agents/` and the full pipeline activates automatically.
 
 ---
 
 ## How It Works
 
 ```
-Developer writes system-prompt.md
+Developer writes system-prompt.md (+ optional skill files)
          │
          ▼
-CI generates eval-set.json (once per new agent)
+CI provisions n8n workflow + sets webhook secret (once per new agent)
          │
          ▼
-Open PR  ◄──────────────────────────────────────────────────────┐
-         │                                                       │
-         ▼                                                       │
-GitHub Actions runs eval harness                                │
-  • Fetches eval set + system prompt from the PR branch         │
-  • Runs N games in parallel (agent + user simulator)           │
-  • Requires ≥80% of games to complete without error            │
-  • Computes: success rate, avg turns, tokens/game              │
-  • Commits QUALITY_SCORE header to system-prompt.md            │
-  • If quality improved → marks PR ready for review             │
-         │                                                       │
-         ▼                                                       │
-Developer reviews + merges PR                                   │
-         │                                                       │
-         ▼                                                       │
-Stale logs are deleted automatically (clean-eval-logs)          │
-         │                                                       │
-         ▼                                                       │
-After N merged PRs: analyze-and-improve fires automatically     │
-  • Reads current agent files + last N conversation logs        │
-  • LLM identifies failure patterns by priority (see below)     │
-  • LLM applies targeted edits to system-prompt + skills        │
-  • Opens a draft PR with the improvements ──────────────────────┘
+CI generates eval-set.json (once per new agent, force-regeneratable)
+         │
+         ▼
+Open PR  ◄──────────────────────────────────────────────────────────┐
+         │                                                           │
+         ▼                                                           │
+GitHub Actions: static verification (P1–P13, assessment only)       │
+  • Checks for credentials, injection payloads, role clarity,       │
+    EU AI Act Art. 50 disclosure, injection resilience, and more    │
+  • Reports findings in PR comment — never blocks merge             │
+         │                                                           │
+         ▼                                                           │
+GitHub Actions: eval harness                                         │
+  • Fetches eval set + system prompt from the PR branch             │
+  • Runs N games in parallel (agent + user simulator)               │
+  • Computes: success rate, avg turns, tokens/game                  │
+  • Commits QUALITY_SCORE header to system-prompt.md               │
+  • If quality improved → marks PR ready for review                 │
+         │                                                           │
+         ▼                                                           │
+Developer reviews + merges PR (via AgentForge or GitHub)            │
+         │                                                           │
+         ▼                                                           │
+Stale logs are deleted automatically (clean-eval-logs)              │
+         │                                                           │
+         ▼                                                           │
+After N merged PRs: analyze-and-improve fires automatically          │
+  • Reads current agent files + last N conversation logs            │
+  • LLM identifies failure patterns by priority (see below)         │
+  • LLM applies targeted edits to system-prompt + skills            │
+  • Opens a draft PR with the improvements ──────────────────────────┘
 ```
 
 ---
@@ -46,101 +56,209 @@ After N merged PRs: analyze-and-improve fires automatically     │
 
 ```
 ├── agents/
-│   └── akinator/
-│       ├── system-prompt.md          # Agent definition (may include QUALITY_SCORE header)
-│       └── evals/
-│           ├── eval-set.json         # Test scenarios (auto-generated, committed to repo)
-│           └── logs/                 # Conversation logs per eval run (auto-generated)
-│               └── 2026-01-15T14-30-00-42-manual.json
+│   ├── akinator/
+│   │   ├── system-prompt.md          # Agent definition (includes QUALITY_SCORE header after first eval)
+│   │   ├── skills/                   # Per-agent skill files (loaded by the agent at runtime)
+│   │   │   ├── candidate-state-manager.md
+│   │   │   ├── entropy-calculator.md
+│   │   │   ├── confidence-threshold-check.md
+│   │   │   └── knowledge-base-resolver.md
+│   │   └── evals/
+│   │       ├── eval-set.json         # Test scenarios (auto-generated, committed to repo)
+│   │       └── logs/                 # Conversation logs per eval run (auto-generated)
+│   │           └── 2026-01-15T14-30-00-42-manual.json
+│   ├── novagirl/
+│   │   ├── system-prompt.md
+│   │   └── evals/
+│   │       └── eval-set.json
+│   └── b3mo/
+│       └── system-prompt.md
 │
-├── skills/                           # Shared skill files, loaded by the agent at runtime
-│   ├── candidate-state-manager.md
-│   ├── entropy-calculator.md
-│   ├── confidence-threshold-check.md
-│   └── knowledge-base-resolver.md
-│
-├── agent-eval/                       # TypeScript eval harness (runs in GitHub Actions)
+├── agent-eval/                       # TypeScript eval + verification harness (GitHub Actions)
 │   └── src/
 │       ├── eval.ts                   # Orchestrates a full eval run
-│       ├── game.ts                   # Single game loop (agent call + user sim)
-│       ├── generate.ts               # Eval set generation logic
+│       ├── game.ts                   # Single game loop (agent + user simulator)
+│       ├── generate.ts               # Eval set generation (supports force-regeneration)
+│       ├── generate-index.ts         # CLI entry for generate-eval-set workflow
+│       ├── verify.ts                 # Static verification (P1–P13)
 │       ├── github.ts                 # GitHub Contents API helpers
 │       └── types.ts                  # Shared interfaces
 │
+├── webapp/                           # AgentForge — Next.js web UI
+│   └── app/api/agents/[name]/
+│       ├── route.ts                  # Agent data (prompt, skills, PR info); ?ref= supported
+│       ├── chat/route.ts             # Proxy to n8n webhook for live preview chat
+│       ├── eval-set/route.ts         # Eval set presence + count
+│       ├── logs/route.ts             # Eval log listing and content
+│       ├── skill/route.ts            # Individual skill file read/write
+│       ├── improve-from-chat/route.ts # LLM-driven prompt improvement from chat history
+│       └── webhook-status/route.ts  # Check if agent's n8n webhook is configured
+│
 ├── workflows/                        # Importable n8n workflow JSON files
-│   ├── evaluate-pr.json              # Quality gate (legacy n8n path, superseded by CI)
-│   ├── generate-eval-set.json        # Generate test cases (called by CI)
-│   ├── edit-system-prompt-pr.json    # AI-edit a prompt and open a PR
+│   ├── akinator-game.json            # Live Akinator chat agent
+│   ├── analyze-and-improve.json      # Analyze logs + open improvement PR
+│   ├── edit-system-prompt-pr.json    # AI-edit a prompt and open a draft PR
+│   ├── generate-eval-set.json        # Generate test cases (n8n version)
 │   ├── run-single-eval.json          # Run one game interactively
-│   └── analyze-and-improve.json     # Analyze logs and create improvement PR
+│   └── evaluate-pr.json             # Quality gate (legacy n8n path)
 │
 └── .github/
     └── workflows/
-        ├── agent-eval.yml            # Run eval on every PR touching agents/ or skills/
-        ├── generate-eval-set.yml     # Auto-generate eval set when a new agent is added
+        ├── agent-eval.yml            # Run eval on every PR touching agents/
+        ├── generate-eval-set.yml     # Auto-generate eval set; force-regenerate on manual dispatch
+        ├── verify-prompt.yml         # Static P1–P13 verification (assessment, non-blocking)
+        ├── provision-n8n-agent.yml   # Provision n8n workflow + webhook secret for new agents
         ├── clean-eval-logs.yml       # Delete stale logs after a prompt/skills merge
         └── auto-analyze.yml         # Trigger analyze-and-improve after N sessions
 ```
 
 ---
 
+## AgentForge Web UI
+
+`webapp/` is a Next.js 14 app that provides a UI for the entire pipeline.
+
+**Configure tab** — Edit system prompt and skills, open or update a PR, view the auto-remediated diff from the last verification run.
+
+**Quality Checks sidebar** — Four collapsible sections:
+
+| Section | What it shows |
+|---|---|
+| **Formal Verification** | P1–P13 results from the last `verify-prompt` run; shows auto-remediation diff when available |
+| **Simulated Users** | Eval set status (✅ N · Simulated users available); controls number of cases to generate |
+| **Chat Logs** | Eval run logs with per-game conversation replay; configurable success rate and iteration thresholds |
+| **Analyse & Improve** | Manual or automatic improvement mode |
+
+Each section has a **▶ Run** button that dispatches the corresponding GitHub Actions workflow directly from the UI.
+
+**Preview tab** — Live chat with the agent via its n8n webhook. Includes an "✨ Use this chat to improve" button that sends the conversation to an LLM and proposes prompt edits.
+
+**Left sidebar** — Agent list with traffic-light status, plus a live Workflows panel showing recent GitHub Actions runs.
+
+---
+
 ## Adding a New Agent
 
 1. Create `agents/<your-agent>/system-prompt.md` with your agent definition.
-2. Open a PR — the `generate-eval-set` workflow detects the new file and commits `evals/eval-set.json` to your branch automatically (requires the `N8N_AGENT_<NAME>_WEBHOOK_URL` secret to exist first — see Setup).
-3. The eval harness runs once the eval set is committed, scores the agent, and writes the `QUALITY_SCORE` header.
+2. Open a PR — three things happen automatically:
+   - `provision-n8n-agent` creates an n8n chat workflow, activates it, and stores the webhook URL as a repo variable (`N8N_AGENT_<NAME>_WEBHOOK_URL`).
+   - `generate-eval-set` generates `evals/eval-set.json` and commits it to the branch.
+   - `verify-prompt` runs the P1–P13 static checks and posts findings as a PR comment.
+3. Once the eval set is committed, `agent-eval` runs, scores the agent, and writes the `QUALITY_SCORE` header.
 4. Review and merge. The improvement loop is now active for your agent.
 
-**Skill changes** automatically re-evaluate all agents on the same PR.
+**Per-agent skill files** live under `agents/<name>/skills/*.md` and are automatically included in verification and eval runs.
+
+---
+
+## Re-provisioning an Agent
+
+If an agent's n8n workflow was deleted or deactivated after initial provisioning:
+
+1. Go to **Actions → Provision n8n Agent Workflow → Run workflow**.
+2. Enter the agent name (e.g. `novagirl`) and set **force** to `true`.
+3. This re-creates the workflow in n8n, re-activates it, and updates the `N8N_AGENT_<NAME>_WEBHOOK_URL` variable.
+
+---
+
+## Regenerating an Eval Set
+
+When you want more (or fewer) simulated users than the existing set:
+
+1. Open AgentForge → select the agent → Simulated Users section.
+2. Change **Number of simulated users** and click **▶ Run**.
+3. Because it's a manual dispatch, `FORCE_REGEN=true` is set automatically — the workflow overwrites the existing `eval-set.json` instead of skipping.
+
+---
+
+## Static Verification (P1–P13)
+
+Every PR that touches a system prompt or skill file triggers `verify-prompt.yml`. The verifier checks 13 named properties:
+
+| ID | Property | Method |
+|---|---|---|
+| P1 | NO_CREDENTIALS | Static regex |
+| P2 | NO_SELF_DISCLOSURE | Static regex |
+| P7 | NO_INJECTION_PAYLOAD | Static regex |
+| P3 | ROLE_CLARITY | LLM |
+| P4 | BEHAVIORAL_BOUNDARIES | LLM |
+| P5 | INTERNAL_CONSISTENCY | LLM |
+| P6 | SAFETY_GUARDRAILS | LLM |
+| P8 | INJECTION_RESILIENCE | LLM |
+| P9 | NO_EXFILTRATION | LLM |
+| P10 | TOOL_CALL_SAFETY | LLM |
+| P11 | IP_PROTECTION | LLM |
+| P12 | EU_AI_ACT_ART50 | LLM |
+| P13 | LIABILITY_PROTECTION | LLM |
+
+Results are posted as a PR comment. **FAIL and WARN findings are informational — they never block a merge.** The workflow always completes successfully so CI stays green. When FAILs or WARNs are found, an auto-remediation commit is proposed on the PR branch (`[skip-verify]` tag prevents re-triggering).
 
 ---
 
 ## Improvement Priority
 
-When `analyze-and-improve` runs, it inspects conversation logs and proposes fixes in this order. Higher priorities are mandatory — they appear in every PR where they are found, regardless of whether lower-priority improvements also exist.
+When `analyze-and-improve` runs, it inspects conversation logs and proposes fixes in this order:
 
 | Priority | Area | What triggers it |
 |---|---|---|
-| **1 — Critical** | **Credentials or secrets exposed** | Any API key, password, private key, or token appearing in agent output — including in chain-of-thought. Must never be printed. |
-| **1 — Critical** | **System prompt or skill file contents leaked** | Agent quotes or paraphrases its own instructions or skill file text. |
-| **1 — Critical** | **User hidden context exposed** | Agent reveals the eval's hidden `context` or `thoughts` fields, which the simulated user never sends. |
-| **1 — Critical** | **Raw tool output surfaced** | Agent forwards API responses, file payloads, or raw JSON from tool calls to the user. |
-| **2 — High** | **Process exposed** | Agent mentions fetching skill files, describes its own algorithm, or surfaces internal reasoning steps. |
-| **2 — High** | **Rule breaking** | Agent violates its own stated rules or game conditions. |
-| **3 — Medium** | **Success rate** | Agent fails to complete games in a notable fraction of sessions. |
-| **4 — Low** | **Turn count** | Agent takes significantly more questions than the median to reach a conclusion. |
-| **5 — Last** | **Token efficiency** | Agent responses are unnecessarily verbose or repetitive. |
-
-Priorities 3–5 use the median across the log batch as the baseline — there are no fixed numeric thresholds.
+| **1 — Critical** | Credentials or secrets exposed | Any API key, password, or token in agent output — including chain-of-thought |
+| **1 — Critical** | System prompt or skill file leaked | Agent quotes or paraphrases its own instructions |
+| **1 — Critical** | User hidden context exposed | Agent reveals `context` or `thoughts` fields (never sent by the user) |
+| **1 — Critical** | Raw tool output surfaced | Agent forwards API payloads or raw JSON to the user |
+| **2 — High** | Process exposed | Agent describes its own algorithm or internal reasoning |
+| **2 — High** | Rule breaking | Agent violates its own stated rules |
+| **3 — Medium** | Success rate | Notable fraction of sessions fail to complete |
+| **4 — Low** | Turn count | Significantly more questions than median to reach a conclusion |
+| **5 — Last** | Token efficiency | Unnecessarily verbose or repetitive responses |
 
 ---
 
 ## GitHub Actions Workflows
 
-### `agent-eval.yml` — Eval on every PR
+### `verify-prompt.yml` — Static verification on every PR
 
-**Triggers:** Pull request touching `agents/**` or `skills/**`; or manual dispatch.
+**Triggers:** PR touching `agents/*/system-prompt.md` or `agents/*/skills/**/*.md`; manual dispatch.
 
-**Manual dispatch input:** `agent_name` (e.g. `akinator`). Other fields (`min_success_rate`, `max_avg_iterations`, `concurrency`) are optional overrides.
+**Manual dispatch inputs:** `agent` (e.g. `novagirl`), `ref` (branch or SHA, defaults to `main`).
 
-**Required secrets per agent:**
-
-| Secret | Example name | Value |
-|---|---|---|
-| `N8N_AGENT_<NAME>_WEBHOOK_URL` | `N8N_AGENT_AKINATOR_WEBHOOK_URL` | The n8n webhook URL for the agent's chat endpoint |
-| `OPENROUTER_API_KEY` | — | OpenRouter API key (shared across agents) |
-
-The job checks for the agent-specific webhook secret before running. If it is not set, the step prints the exact secret name to add and exits cleanly without failing the PR check.
+Posts a detailed P1–P13 report as a PR comment. Auto-commits a remediation patch when issues are found. Always exits successfully — findings are advisory only.
 
 ---
 
-### `generate-eval-set.yml` — Generate eval set for new agents
+### `provision-n8n-agent.yml` — Provision n8n for new agents
 
-**Triggers:** Pull request that adds a new `agents/*/system-prompt.md` (detected via `--diff-filter=A`).
+**Triggers:** PR that adds a new `agents/*/system-prompt.md`; manual dispatch.
 
-**Idempotent:** If `evals/eval-set.json` already exists on the branch, the job skips.
+**Manual dispatch inputs:** `agent_name` (required), `force` (`true` to re-provision an existing agent).
 
-After generation, it commits `eval-set.json` to the PR branch, which then triggers the eval workflow automatically.
+For each new agent: creates a chat-trigger n8n workflow, activates it, and sets `N8N_AGENT_<NAME>_WEBHOOK_URL` as a repo variable. Idempotent — skips agents already provisioned unless `force=true`.
+
+**Required secrets:**
+
+| Secret | Description |
+|---|---|
+| `N8N_API_URL` | n8n instance base URL |
+| `N8N_API_KEY` | n8n API key (Settings → n8n API) |
+
+---
+
+### `agent-eval.yml` — Eval on every PR
+
+**Triggers:** PR touching `agents/**`; manual dispatch.
+
+**Manual dispatch inputs:** `agent_name`, plus optional `min_success_rate`, `max_avg_iterations`, `concurrency`.
+
+Reads the agent-specific webhook URL from repo variables (`N8N_AGENT_<NAME>_WEBHOOK_URL`). If not set, prints the exact variable name to add and exits cleanly.
+
+---
+
+### `generate-eval-set.yml` — Generate eval set
+
+**Triggers:** PR that adds a new `agents/*/system-prompt.md`; manual dispatch.
+
+**Manual dispatch inputs:** `agent_name` (required), `num_tests` (default `10`).
+
+Manual dispatch always force-regenerates (`FORCE_REGEN=true`), overwriting any existing `eval-set.json`. PR-triggered runs are idempotent (skip if file already exists).
 
 **Required secrets:**
 
@@ -153,9 +271,9 @@ After generation, it commits `eval-set.json` to the PR branch, which then trigge
 
 ### `clean-eval-logs.yml` — Delete stale logs after a merge
 
-**Triggers:** Push to `main` touching `agents/**/system-prompt.md` or `skills/**`.
+**Triggers:** Push to `main` touching `agents/**/system-prompt.md` or `agents/**/skills/**`.
 
-Deletes all files under `agents/<affected>/evals/logs/` for every agent whose prompt or shared skills changed. This resets the session counter so `auto-analyze` fires fresh after the next N runs.
+Deletes all files under `agents/<affected>/evals/logs/` for every agent whose prompt or skills changed. Resets the session counter so `auto-analyze` fires fresh after the next N runs.
 
 ---
 
@@ -163,7 +281,7 @@ Deletes all files under `agents/<affected>/evals/logs/` for every agent whose pr
 
 **Triggers:** Push to `main` touching `agents/*/evals/logs/*.json`.
 
-Counts log files per agent. When the count crosses the threshold (default: 5), calls the `analyze-and-improve` n8n webhook for that agent. Only fires on the crossing — not on every subsequent push above the threshold. The counter resets to zero when `clean-eval-logs` runs after a merge.
+Counts log files per agent. When the count crosses the threshold (default: 5), calls the `analyze-and-improve` n8n webhook for that agent. Fires only on the crossing — not on every subsequent push. Counter resets when `clean-eval-logs` runs after a merge.
 
 **Required secrets / variables:**
 
@@ -171,80 +289,6 @@ Counts log files per agent. When the count crosses the threshold (default: 5), c
 |---|---|---|
 | `N8N_ANALYZE_WEBHOOK_URL` | Secret | Production webhook URL from the `analyze-and-improve` n8n workflow |
 | `ANALYZE_SESSIONS_THRESHOLD` | Variable | Minimum sessions before triggering analysis. Default: `5` |
-
----
-
-## n8n Workflows
-
-Import any workflow: open n8n → workflow canvas → ⋯ menu → Import from file.
-
-### `analyze-and-improve.json`
-
-Reads conversation logs from the repo, identifies failure patterns, and opens a draft PR with targeted edits to the agent's system prompt and skill files.
-
-**Triggers:** Webhook (called by `auto-analyze.yml`) or Execute Sub-Workflow (manual).
-
-**Inputs:**
-| Field | Description |
-|---|---|
-| `owner` / `repo` | GitHub owner and repo name |
-| `system_prompt_path` | e.g. `agents/akinator/system-prompt.md` |
-| `skills_paths` | Comma-separated list of skill file paths |
-| `base_branch` | Target branch for the PR (usually `main`) |
-| `github_token` | GitHub token for reading files (write ops use the stored n8n credential) |
-| `max_logs` | How many recent logs to analyse (matches `ANALYZE_SESSIONS_THRESHOLD`) |
-
-**What it does:**
-1. Fetches system prompt, skill files, and the last `max_logs` conversation logs in parallel
-2. LLM analyses failure patterns according to the priority table above
-3. Second LLM pass applies targeted edits to each affected file
-4. Creates a branch, commits all changes, opens a draft PR
-
-**Credentials to configure after import:**
-- All HTTP request nodes → GitHub credential (`AI AGENT VECHAIN`)
-- Both LLM nodes → OpenRouter credential (`OpenRouter (Quill)`)
-
----
-
-### `generate-eval-set.json`
-
-Generates diverse test scenarios for an agent and commits them to `agents/<folder>/evals/eval-set.json`. Run once per agent before the first eval.
-
-**Inputs:** `system_message`, `owner`, `repo`, `agent_folder`, `count` (default 10)
-
-**Each test case:**
-```json
-{
-  "id": 1,
-  "chatMessage": "I am ready!",
-  "context": "A 28-year-old Italian gamer is thinking of Mario, the Nintendo plumber.",
-  "thoughts": "The user loves classic games and wants to test an iconic character."
-}
-```
-
-`chatMessage` must give the agent zero information. All identifying details live exclusively in `context`. The `thoughts` and `context` fields are never sent to the agent — they are held by the user simulator only.
-
----
-
-### `edit-system-prompt-pr.json`
-
-AI-edits an agent's system prompt based on free-text instructions and opens a draft PR. Useful for manual one-off improvements outside the automated loop.
-
-**Inputs:** `owner`, `repo`, `system_prompt_path`, `edit_instructions`, `base_branch`
-
-**Output:** `pr_url`, `branch`
-
----
-
-### `run-single-eval.json`
-
-Runs one complete game simulation for a single test case and returns `{iterations, success, tokens_used}`. Useful for debugging a specific scenario interactively.
-
----
-
-### `evaluate-pr.json`
-
-The original n8n-based quality gate. Superseded by the TypeScript harness in `agent-eval/` for CI use, but still importable for manual use or local testing without GitHub Actions.
 
 ---
 
@@ -271,7 +315,7 @@ Every eval run prepends a structured comment to `system-prompt.md`:
 -->
 ```
 
-The harness strips this header before sending the prompt to the agent, so it never affects game behaviour. A PR is marked ready for review when both `success_rate` and `avg_iterations` strictly improve over the baseline. On the first run, the thresholds from `MIN_SUCCESS_RATE` / `MAX_AVG_ITERATIONS` are used instead.
+The harness strips this header before sending the prompt to the agent. A PR is marked ready for review when both `success_rate` and `avg_iterations` strictly improve over the baseline.
 
 ---
 
@@ -281,20 +325,32 @@ The harness strips this header before sending the prompt to the agent, so it nev
 
 | Secret | Required | Description |
 |---|---|---|
-| `N8N_AGENT_<NAME>_WEBHOOK_URL` | Per agent | n8n webhook URL for the agent's chat endpoint. Replace `<NAME>` with the agent folder name uppercased (e.g. `AKINATOR`). |
+| `N8N_API_URL` | Yes | n8n instance base URL (for provisioning) |
+| `N8N_API_KEY` | Yes | n8n API key (for provisioning) |
 | `OPENROUTER_API_KEY` | Yes | API key from openrouter.ai |
-| `N8N_ANALYZE_WEBHOOK_URL` | Yes | Production webhook URL from `analyze-and-improve.json` in n8n |
+| `N8N_ANALYZE_WEBHOOK_URL` | Yes | Webhook URL from `analyze-and-improve.json` |
 | `EVAL_GEN_MODEL` | No | OpenRouter model for eval generation. Default: `openai/gpt-5.4-mini` |
 
 ### GitHub Variables (Settings → Secrets and variables → Actions → Variables)
 
 | Variable | Default | Description |
 |---|---|---|
-| `ANALYZE_SESSIONS_THRESHOLD` | `5` | Number of new eval sessions before auto-analysis fires |
+| `ANALYZE_SESSIONS_THRESHOLD` | `5` | Sessions before auto-analysis fires |
+| `N8N_AGENT_<NAME>_WEBHOOK_URL` | Set by provision workflow | Per-agent n8n webhook URL (auto-set on new agent PRs) |
+| `N8N_AGENT_SKILLS_WORKFLOW_ID` | `3cqVVop36Bx3ySMa` | ID of the generic skills n8n workflow used as the agent template |
+
+### AgentForge Local Setup
+
+```bash
+cd webapp
+cp .env.local.example .env.local   # fill in GITHUB_TOKEN, OPENROUTER_API_KEY, etc.
+npm install
+npm run dev
+```
 
 ### n8n Credentials
 
 | Credential | Used by | Notes |
 |---|---|---|
-| GitHub (Personal Access Token, `repo` scope) | All HTTP request nodes | Needs read + write access to this repo |
+| GitHub (Personal Access Token, `repo` scope) | All HTTP request nodes | Read + write access to this repo |
 | OpenRouter API key | All LLM nodes | Same key as `OPENROUTER_API_KEY` secret |
