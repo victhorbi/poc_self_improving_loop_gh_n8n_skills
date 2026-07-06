@@ -60,7 +60,7 @@ jobs:
       files: ${{ steps.find.outputs.files }}
       count: ${{ steps.find.outputs.count }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.ref || github.event.pull_request.head.sha || '' }}
@@ -111,7 +111,7 @@ jobs:
     if: needs.detect.outputs.count != '0'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
 
       - uses: actions/setup-node@1e60f620b9541d16bece96c5465dc8ee9832be0b # actions/setup-node v4
         with:
