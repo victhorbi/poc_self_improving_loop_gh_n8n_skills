@@ -40,7 +40,7 @@ jobs:
       matrix: ${{ steps.find.outputs.matrix }}
       count:  ${{ steps.find.outputs.count }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
         with:
           fetch-depth: 0
 
@@ -72,7 +72,7 @@ jobs:
       matrix:
         agent_folder: ${{ fromJSON(needs.detect.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # actions/checkout v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
 
       # Derive agent name (e.g. "akinator") and its uppercase form (e.g. "AKINATOR")
       # used to resolve the agent-specific webhook secret.
